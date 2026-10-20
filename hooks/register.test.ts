@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { compactPercent, countdownColor, detailOf, dots, duration, gradientAt, gradientCells, hasReset, isFable, clearPassedResets, kilo, limitName, modelName, markedBar, WARN_AT, maskSecrets, mini, parseGitStatus, pctText, resetIn, smoothBar, turnLength } from './register'
+import { clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, modelName, parseGitStatus, pctText, resetIn, trackCells, turnLength, WARN_AT } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -27,27 +27,8 @@ test('small moves on a 1M window stay visible', () => {
   expect(kilo(1_000_000)).toBe('1M')
 })
 
-test('marked bar puts the marker at the compact point', () => {
-  const segs = markedBar(50, 80)
-  expect(segs.map(s => s.text).join('')).toBe('█'.repeat(10) + '░'.repeat(6) + '┃' + '░'.repeat(3))
-  expect(segs.map(s => s.text).join('').length).toBe(20)
-  expect(markedBar(50, 500).map(s => s.text).join('').length).toBe(20)
-  expect(segs.find(s => s.kind === 'mark')?.text).toBe('┃')
-  expect(markedBar(50, null).some(s => s.kind === 'mark')).toBe(false)
-})
 
-test('5h dots', () => {
-  expect(dots(32)).toEqual({ on: '●●●●', off: '○○○○○○' })
-  expect(dots(4).on).toBe('●')
-  expect(dots(0).on).toBe('')
-  expect(dots(100).off).toBe('')
-})
 
-test('smooth bar moves in eighth steps', () => {
-  expect(smoothBar(0)).toEqual({ on: '', off: '··········' })
-  expect(smoothBar(25)).toEqual({ on: '██▌', off: '·······' })
-  expect(smoothBar(100)).toEqual({ on: '██████████', off: '' })
-})
 
 test('fable windows and turn length', () => {
   expect(isFable('seven_day_fable')).toBe(true)
@@ -73,7 +54,6 @@ test('gradient runs green to amber to red', () => {
   const cells = gradientCells('███', 0, 10)
   expect(cells.length).toBe(3)
   expect(cells[0]?.color).toBe('#117a2e')
-  expect(markedBar(100, null).filter(s => s.kind === 'fill').at(-1)?.color).toBe('#b31d28')
 })
 
 test('countdown colour follows the 5h usage', () => {
@@ -149,12 +129,21 @@ test('model ids read as names', () => {
   expect(modelName('custom-model')).toBe('custom-model')
 })
 
-test('warning line sits at 75% inside the bar, compact tick near the end', () => {
-  const segs = markedBar(47, WARN_AT, 96.7)
-  const text = segs.map(s => s.text).join('')
-  expect(text.length).toBe(20)
-  expect(text.indexOf('┃')).toBe(15)
-  expect(text.indexOf('╎')).toBe(19)
-  // The warning line sits inside the fill once usage passes it.
-  expect(markedBar(90, WARN_AT, null).map(s => s.text).join('').slice(14, 17)).toBe('█┃█')
+
+test('gauges are solid strips with notches at 75% and the compact point', () => {
+  const strip = trackCells(47, 12, WARN_AT, 96.7)
+  expect(strip.length).toBe(12)
+  expect(strip.every(c => c.ch === '█')).toBe(true)
+  expect(strip[0]?.color).toBe('#117a2e')
+  expect(strip[9]?.color).toBe('#b36b00')
+  expect(strip[11]?.color).toBe('#8a929e')
+  expect(strip[7]?.color).toBe('#c9ced6')
+  // Once the fill passes the compact point, its cell shows the fill, not the notch.
+  expect(trackCells(100, 12, null, 96.7)[11]?.color).toBe('#b31d28')
+})
+
+test('5h dots: five, lit in the gradient, rings for the rest', () => {
+  const d = dotCells(30)
+  expect(d.map(c => c.ch).join('')).toBe('●●○○○')
+  expect(dotCells(2)[0]?.ch).toBe('●')
 })

@@ -86,8 +86,8 @@ test('hide collapses the band and show brings it back', async ($, on) => {
 
   await ui.press({ key: 'hide' })
   const collapsed = await text()
-  expect(collapsed).not.toContain('█')
-  expect(collapsed).toContain('▰')
+  expect(collapsed).not.toContain('Context')
+  expect((collapsed.match(/█/g) ?? []).length).toBe(5)
   expect(collapsed).toContain('25%')
   expect(collapsed).toContain('12%')
 

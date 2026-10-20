@@ -22,7 +22,9 @@ const tickOwner = atom({ plugin: 'context-bar', key: 'tickOwner' } as const, nul
 
 const CONTEXT_PANE = 'context-bar-context'
 const USAGE_PANE = 'context-bar-usage'
-const WIDTH = 20
+const WIDTH = 12
+/** Cells in the Fable gauge. */
+const SMOOTH = 8
 const COMPACT_WARN = 85
 const ACTIVE = ['pending', 'running', 'waiting']
 /** Tools that can change files, after which the git status is read again. */
@@ -64,54 +66,35 @@ export const mini = (percent: number, lit: string, unlit: string) => {
   return { on: lit.repeat(f), off: unlit.repeat(MINI - f) }
 }
 
-export type Segment = { text: string; kind: 'fill' | 'empty' | 'mark' | 'tick'; color?: string }
-
 /** Where the early-warning line sits on the context bar, as a share of the window. */
 export const WARN_AT = 75
 
+/** Grey for the unlit part of every gauge, so the track reads as one strip. */
+const TRACK = '#c9ced6'
+/** The early-warning notch and the quieter auto-compact notch on the track. */
+const NOTCH_WARN = '#b36b00'
+const NOTCH_COMPACT = '#8a929e'
+
 /**
- * The bar as runs of filled, empty and marker cells. The warning line replaces
- * the cell at `warnPercent`; the auto-compact point, a quieter tick, replaces
- * the cell at `compactPercent` unless the two share a cell.
+ * A gauge as solid cells: lit cells in the gradient, the rest in the track
+ * grey, with optional notches replacing the cells at two positions.
  */
-export const markedBar = (percent: number, warnPercent: number | null, compactPercent: number | null = null): Segment[] => {
-  const filled = Math.min(WIDTH, Math.round((percent / 100) * WIDTH))
-  const cellOf = (p: number | null) => (p === null ? -1 : Math.min(WIDTH - 1, Math.max(0, Math.floor((p / 100) * WIDTH))))
+export const trackCells = (percent: number, width: number, warnPercent: number | null, compactPercent: number | null) => {
+  const lit = Math.min(width, Math.max(0, Math.ceil(((percent - 1e-9) / 100) * width)))
+  const cellOf = (p: number | null) => (p === null ? -1 : Math.min(width - 1, Math.max(0, Math.floor((p / 100) * width))))
   const warn = cellOf(warnPercent)
-  const tick = cellOf(compactPercent)
-  const out: Segment[] = []
-  const pushEmpty = (ch: string) => {
-    const last = out[out.length - 1]
-    if (last !== undefined && last.kind === 'empty') last.text += ch
-    else out.push({ kind: 'empty', text: ch })
-  }
-  for (let i = 0; i < WIDTH; i++) {
-    if (i === warn) out.push({ kind: 'mark', text: '┃' })
-    else if (i === tick) out.push({ kind: 'tick', text: '╎' })
-    else if (i < filled) out.push({ kind: 'fill', text: '█', color: gradientAt(i / (WIDTH - 1)) })
-    else pushEmpty('░')
-  }
-  return out
+  const notch = cellOf(compactPercent)
+  return Array.from({ length: width }, (_, i) => ({
+    ch: '█',
+    color:
+      i === warn ? NOTCH_WARN : i === notch && i >= lit ? NOTCH_COMPACT : i < lit ? gradientAt(width <= 1 ? 0 : i / (width - 1)) : TRACK,
+  }))
 }
 
-const DOTS = 10
-
-/** Dots round up, so any usage above zero lights at least one. */
-export const dots = (percent: number) => {
-  const f = Math.min(DOTS, Math.max(0, Math.ceil((percent / 100) * DOTS)))
-  return { on: '●'.repeat(f), off: '○'.repeat(DOTS - f) }
-}
-
-const EIGHTHS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']
-const SMOOTH = 10
-
-/** A bar in eighth-cell steps: the filled run and the empty rest. */
-export const smoothBar = (percent: number) => {
-  const units = Math.round((Math.min(100, Math.max(0, percent)) / 100) * SMOOTH * 8)
-  const full = Math.floor(units / 8)
-  const part = EIGHTHS[units % 8] ?? ''
-  const used = full + (part === '' ? 0 : 1)
-  return { on: '█'.repeat(full) + part, off: '·'.repeat(SMOOTH - used) }
+/** Five dots for the 5h window: lit ones in the gradient, the rest as rings. */
+export const dotCells = (percent: number) => {
+  const { on, off } = mini(percent, '●', '○')
+  return [...gradientCells(on, 0, MINI), ...[...off].map(ch => ({ ch, color: TRACK }))]
 }
 
 export const isFable = (kind: string) => /fable/i.test(kind)
@@ -474,162 +457,133 @@ export const register: Register = on => {
     const showWork = e.props.isWorking || active.length > 0
     const five = ls.find(l => l.kind === 'five_hour')
 
+    const fiveLeft = five === undefined ? null : resetIn(five.resetsAt, t)
+    const fable = ls.filter(l => isFable(l.kind))
+
+    // One cell per glyph, coloured; the gauges are strips of these.
+    const cells = (list: { ch: string; color: string }[], prefix: string) =>
+      list.map((c, i) => (
+        <Text key={`${prefix}${i}`} color={c.color} bold>
+          {c.ch}
+        </Text>
+      ))
+
+    const contextGauge = (width: 'full' | 'mini') =>
+      width === 'mini' ? (
+        <Box>{cells(trackCells(percent, MINI, null, null), 'm')}</Box>
+      ) : (
+        <Box>{cells(trackCells(percent, WIDTH, WARN_AT, markAt), 'c')}</Box>
+      )
+
+    const fiveGroup =
+      five === undefined ? null : (
+        <Box key="five" gap={1} alignItems="center">
+          <Text dimColor>5h</Text>
+          <Box>{cells(dotCells(five.percent), 'd')}</Box>
+          <Button key="open-usage" plain dimColor={five.percent < 50} label={`${five.percent}%`} onPress={() => openUsage($)} />
+          {five.percent >= 80 ? <Text color="error">⚠</Text> : null}
+          {fiveLeft !== null ? (
+            <Text color={countdownColor(five.percent)} bold>
+              ↻ {fiveLeft}
+            </Text>
+          ) : null}
+        </Box>
+      )
+
+    const gitGroup = (compact: boolean) =>
+      repo === null ? null : (
+        <Box key="git" gap={1}>
+          <Text color="suggestion" bold>
+            ⎇ {repo.branch}
+            {compact && repo.changed > 0 ? '*' : ''}
+          </Text>
+          {!compact && repo.changed > 0 ? (
+            <Text color="warning" bold>
+              ✎{repo.changed}
+            </Text>
+          ) : null}
+          {!compact && repo.ahead > 0 ? <Text dimColor>↑{repo.ahead}</Text> : null}
+          {!compact && repo.behind > 0 ? <Text dimColor>↓{repo.behind}</Text> : null}
+        </Box>
+      )
+
+    const workGroup = showWork ? (
+      <Box key="work" gap={2}>
+        {e.props.isWorking ? (
+          <Box gap={1}>
+            <Text color="claude" bold>
+              ▶ {act === null ? 'thinking…' : act.tool}
+            </Text>
+            {act?.detail !== undefined ? <Text dimColor>{act.detail}</Text> : null}
+          </Box>
+        ) : null}
+        {active.length > 0 ? (
+          <Text color="suggestion">
+            ⧉ {active.length}
+            {hidden ? '' : ` agent${active.length > 1 ? 's' : ''}: ${active.slice(0, 3).join(', ')}${active.length > 3 ? '…' : ''}`}
+          </Text>
+        ) : null}
+      </Box>
+    ) : null
+
     if (hidden) {
-      const ctx = mini(percent, '▰', '▱')
-      const fiveDots = five === undefined ? null : mini(five.percent, '●', '○')
-      const fiveReset = five === undefined ? null : resetIn(five.resetsAt, t)
       return (
-        <Box flexWrap="wrap">
-          {gradientCells(ctx.on, 0, MINI).map((c, i) => (
-            <Text key={`m${i}`} color={c.color} bold>
-              {c.ch}
-            </Text>
-          ))}
-          <Text dimColor>{ctx.off}</Text>
-          <Text> </Text>
-          <Button key="open-context" plain label={`${Math.round(percent)}%`} onPress={() => openContext($)} />
-          {five !== undefined && fiveDots !== null ? (
-            <Box>
-              <Text dimColor> · 5h </Text>
-              {gradientCells(fiveDots.on, 0, MINI).map((c, i) => (
-                <Text key={`n${i}`} color={c.color} bold>
-                  {c.ch}
-                </Text>
-              ))}
-              <Text dimColor>{fiveDots.off}</Text>
-              <Text> </Text>
-              <Button
-                key="open-usage"
-                plain
-                dimColor={five.percent < 50}
-                label={`${five.percent}%`}
-                onPress={() => openUsage($)}
-              />
-              {fiveReset !== null ? (
-                <Text color={countdownColor(five.percent)} bold>
-                  {' '}↻{fiveReset}
-                </Text>
-              ) : null}
-            </Box>
-          ) : null}
-          {repo !== null ? (
-            <Text>
-              <Text dimColor> · </Text>
-              <Text color="suggestion">⎇ {repo.branch}</Text>
-              {repo.changed > 0 ? <Text color="warning" bold>*</Text> : null}
-            </Text>
-          ) : null}
-          {e.props.isWorking ? (
-            <Text color="claude">
-              {'  '}▶ {act === null ? 'thinking…' : act.tool}
-              {act?.detail !== undefined ? <Text dimColor> {act.detail}</Text> : null}
-            </Text>
-          ) : null}
-          {active.length > 0 ? (
-            <Text color="suggestion">
-              {'  '}⧉ {active.length}
-            </Text>
-          ) : null}
-          <Text> </Text>
+        <Box flexWrap="wrap" columnGap={2} alignItems="center">
+          <Box gap={1} alignItems="center">
+            {contextGauge('mini')}
+            <Button key="open-context" plain label={`${Math.round(percent)}%`} onPress={() => openContext($)} />
+          </Box>
+          {fiveGroup}
+          {gitGroup(true)}
+          {workGroup}
+          <Box flexGrow={1} />
           <Button key="show" label="Show" onPress={() => toggleHidden($)} />
         </Box>
       )
     }
 
     return (
-      <Box flexWrap="wrap">
-        <Text dimColor>Context </Text>
-        {markedBar(percent, WARN_AT, markAt).map((seg, i) => (
-          <Text
-            key={`seg${i}`}
-            color={seg.kind === 'mark' ? 'warning' : seg.kind === 'tick' ? 'inactive' : seg.color}
-            bold={seg.kind === 'fill' || seg.kind === 'mark'}
-            dimColor={seg.kind === 'empty'}
-          >
-            {seg.text}
-          </Text>
-        ))}
-        <Text> </Text>
-        <Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} />
-        {f !== null ? (
-          <Text dimColor>
-            {' '}({kilo(f.tokens)}/{kilo(f.window)})
-          </Text>
-        ) : null}
+      <Box flexWrap="wrap" columnGap={2} alignItems="center">
+        <Box gap={1} alignItems="center">
+          <Text dimColor>Context</Text>
+          {contextGauge('full')}
+          <Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} />
+          {f !== null ? (
+            <Text dimColor>
+              {kilo(f.tokens)}/{kilo(f.window)}
+            </Text>
+          ) : null}
+        </Box>
         {toCompact !== null && toCompact >= COMPACT_WARN ? (
-          <Text color="warning"> ⚠ auto-compact {toCompact}%</Text>
-        ) : null}
-        {toCompact === null && percent >= 90 ? <Text color="error"> ⚠ nearly full, /compact</Text> : null}
-        {ls
-          .filter(l => l.kind === 'five_hour')
-          .map(l => (
-            <Box key={l.kind}>
-              <Text dimColor> · 5h </Text>
-              {gradientCells(dots(l.percent).on, 0, DOTS).map((c, i) => (
-                <Text key={`d${i}`} color={c.color} bold>
-                  {c.ch}
-                </Text>
-              ))}
-              <Text dimColor>{dots(l.percent).off}</Text>
-              <Text> </Text>
-              <Button key="open-usage" plain dimColor={l.percent < 50} label={`${l.percent}%`} onPress={() => openUsage($)} />
-              {l.percent >= 80 ? <Text color="error"> ⚠</Text> : null}
-              {resetIn(l.resetsAt, t) !== null ? (
-                <Text color={countdownColor(l.percent)} bold>
-                  {' '}↻ {resetIn(l.resetsAt, t)}
-                </Text>
-              ) : null}
-            </Box>
-          ))}
-        {ls
-          .filter(l => isFable(l.kind))
-          .map(l => (
-            <Text key={l.kind}>
-              <Text dimColor> · Fable </Text>
-              {gradientCells(smoothBar(l.percent).on, 0, SMOOTH).map((c, i) => (
-                <Text key={`f${i}`} color={c.color} bold>
-                  {c.ch}
-                </Text>
-              ))}
-              <Text dimColor>{smoothBar(l.percent).off}</Text>
-              <Text color={l.percent >= 80 ? 'error' : undefined} dimColor={l.percent < 80}> {l.percent}%</Text>
-            </Text>
-          ))}
-        {repo !== null ? (
-          <Text>
-            <Text dimColor> · </Text>
-            <Text color="suggestion" bold>
-              ⎇ {repo.branch}
-            </Text>
-            {repo.changed > 0 ? (
-              <Text color="warning" bold>
-                {' '}✎{repo.changed}
-              </Text>
-            ) : null}
-            {repo.ahead > 0 ? <Text dimColor> ↑{repo.ahead}</Text> : null}
-            {repo.behind > 0 ? <Text dimColor> ↓{repo.behind}</Text> : null}
+          <Text color="warning" bold>
+            ⚠ auto-compact {toCompact}%
           </Text>
         ) : null}
-        {turnMs !== null ? <Text dimColor> · last {turnLength(turnMs)}</Text> : null}
-        {elapsed !== null ? <Text dimColor>{turnMs !== null ? ' / ' : ' · '}session {elapsed}</Text> : null}
-        <Text> </Text>
-        <Button key="hide" label="Hide" onPress={() => toggleHidden($)} />
-        {showWork ? (
-          <Box>
-            {e.props.isWorking ? (
-              <Text color="claude">
-                {'  '}▶ {act === null ? 'thinking…' : act.tool}
-                {act?.detail !== undefined ? <Text dimColor> {act.detail}</Text> : null}
-              </Text>
-            ) : null}
-            {active.length > 0 ? (
-              <Text color="suggestion">
-                {'  '}⧉ {active.length} agent{active.length > 1 ? 's' : ''}: {active.slice(0, 3).join(', ')}
-                {active.length > 3 ? '…' : ''}
-              </Text>
-            ) : null}
+        {toCompact === null && percent >= 90 ? (
+          <Text color="error" bold>
+            ⚠ nearly full, /compact
+          </Text>
+        ) : null}
+        {fiveGroup}
+        {fable.map(l => (
+          <Box key={l.kind} gap={1} alignItems="center">
+            <Text dimColor>Fable</Text>
+            <Box>{cells(trackCells(l.percent, SMOOTH, null, null), `f${l.kind}`)}</Box>
+            <Text dimColor={l.percent < 50} color={l.percent >= 80 ? 'error' : undefined}>
+              {l.percent}%
+            </Text>
+          </Box>
+        ))}
+        {gitGroup(false)}
+        {turnMs !== null || elapsed !== null ? (
+          <Box gap={1}>
+            {turnMs !== null ? <Text dimColor>last {turnLength(turnMs)}</Text> : null}
+            {elapsed !== null ? <Text dimColor>session {elapsed}</Text> : null}
           </Box>
         ) : null}
+        {workGroup}
+        <Box flexGrow={1} />
+        <Button key="hide" label="Hide" onPress={() => toggleHidden($)} />
       </Box>
     )
   })
