@@ -84,12 +84,12 @@ export const trackCells = (percent: number, width: number, warnPercent: number |
   const cellOf = (p: number | null) => (p === null ? -1 : Math.min(width - 1, Math.max(0, Math.floor((p / 100) * width))))
   const warn = cellOf(warnPercent)
   const notch = cellOf(compactPercent)
-  return Array.from({ length: width }, (_, i) => ({
-    // The warning point is a thin line on the strip; every other cell is solid.
-    ch: i === warn ? '┃' : '█',
-    color:
-      i === warn ? NOTCH_WARN : i === notch && i >= lit ? NOTCH_COMPACT : i < lit ? gradientAt(width <= 1 ? 0 : i / (width - 1)) : TRACK,
-  }))
+  return Array.from({ length: width }, (_, i): { ch: string; color: string; bg?: string } => {
+    const base = i < lit ? gradientAt(width <= 1 ? 0 : i / (width - 1)) : TRACK
+    // The warning point is a thin line drawn over the cell's own colour, so no gap shows around it.
+    if (i === warn) return { ch: '┃', color: NOTCH_WARN, bg: base }
+    return { ch: '█', color: i === notch && i >= lit ? NOTCH_COMPACT : base }
+  })
 }
 
 /** The hidden view's five-cell gauge: ▰ lit in the gradient, ▱ unlit. */
@@ -468,9 +468,9 @@ export const register: Register = on => {
     const fable = ls.filter(l => isFable(l.kind))
 
     // One cell per glyph, coloured; the gauges are strips of these.
-    const cells = (list: { ch: string; color: string }[], prefix: string) =>
+    const cells = (list: { ch: string; color: string; bg?: string }[], prefix: string) =>
       list.map((c, i) => (
-        <Text key={`${prefix}${i}`} color={c.color} bold>
+        <Text key={`${prefix}${i}`} color={c.color} backgroundColor={c.bg} bold>
           {c.ch}
         </Text>
       ))

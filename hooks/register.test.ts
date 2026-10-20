@@ -135,6 +135,8 @@ test('gauges are solid strips with notches at 75% and the compact point', () => 
   expect(strip.length).toBe(12)
   expect(strip.filter(c => c.ch === '┃').length).toBe(1)
   expect(strip[9]?.ch).toBe('┃')
+  expect(strip[9]?.bg).toBe('#c9ced6')
+  expect(trackCells(90, 12, WARN_AT, null)[9]?.bg).not.toBe('#c9ced6')
   expect(strip[0]?.color).toBe('#117a2e')
   expect(strip[9]?.color).toBe('#b36b00')
   expect(strip[11]?.color).toBe('#8a929e')
