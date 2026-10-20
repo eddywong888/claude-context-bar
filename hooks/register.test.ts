@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { compactPercent, countdownColor, detailOf, dots, duration, gradientAt, gradientCells, hasReset, isFable, clearPassedResets, kilo, markedBar, maskSecrets, mini, parseGitStatus, pctText, resetIn, smoothBar, turnLength } from './register'
+import { compactPercent, countdownColor, detailOf, dots, duration, gradientAt, gradientCells, hasReset, isFable, clearPassedResets, kilo, limitName, markedBar, maskSecrets, mini, parseGitStatus, pctText, resetIn, smoothBar, turnLength } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -133,4 +133,12 @@ test('a passed 5h reset reads as an empty window', () => {
   ]
   expect(clearPassedResets(list, now).map(l => l.percent)).toEqual([0, 40])
   expect(clearPassedResets([{ kind: 'five_hour', percent: 80, resetsAt: '2026-10-20T11:00:00Z' }], now)[0]?.percent).toBe(80)
+})
+
+test('usage panel names and long countdowns', () => {
+  expect(limitName('five_hour')).toBe('Current session (5h)')
+  expect(limitName('seven_day_fable')).toBe('Fable (weekly)')
+  expect(limitName('seven_day')).toBe('Weekly')
+  const now = Date.parse('2026-10-20T10:00:00Z')
+  expect(resetIn('2026-10-23T08:00:00Z', now)).toBe('2d 22h')
 })

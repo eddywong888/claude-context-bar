@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { ContextFill, GitInfo, Limit, RunningTool } from '../types'
+import type { Breakdown, ContextFill, GitInfo, Limit, RunningTool } from '../types'
 
 const fill = atom({ plugin: 'context-bar', key: 'fill' } as const, null)
 const compactAt = atom({ plugin: 'context-bar', key: 'compactAt' } as const, null)
@@ -17,8 +17,11 @@ const isHidden = atom({ plugin: 'context-bar', key: 'isHidden' } as const, false
 const resetNoticed = atom({ plugin: 'context-bar', key: 'resetNoticed' } as const, null)
 const git = atom({ plugin: 'context-bar', key: 'git' } as const, null)
 const gitAt = atom({ plugin: 'context-bar', key: 'gitAt' } as const, null)
+const breakdown = atom({ plugin: 'context-bar', key: 'breakdown' } as const, null)
 const tickOwner = atom({ plugin: 'context-bar', key: 'tickOwner' } as const, null)
 
+const CONTEXT_PANE = 'context-bar-context'
+const USAGE_PANE = 'context-bar-usage'
 const WIDTH = 20
 const COMPACT_WARN = 85
 const ACTIVE = ['pending', 'running', 'waiting']
@@ -124,8 +127,22 @@ export const resetIn = (resetsAt: string | undefined, nowMs: number) => {
   const at = Date.parse(resetsAt)
   if (Number.isNaN(at) || at <= nowMs) return null
   const m = Math.ceil((at - nowMs) / 60000)
-  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`
+  if (m < 60) return `${m}m`
+  if (m < 24 * 60) return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`
+  return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h`
 }
+
+/** A rate-limit window's name as the usage panel shows it. */
+export const limitName = (kind: string) =>
+  kind === 'five_hour'
+    ? 'Current session (5h)'
+    : kind === 'seven_day'
+      ? 'Weekly'
+      : kind === 'spend_limit'
+        ? 'Spend limit'
+        : isFable(kind)
+          ? 'Fable (weekly)'
+          : kind.replace(/_/g, ' ')
 
 /** Share of the way to auto-compaction, or null when it is off or unknown. */
 export const compactPercent = (tokens: number, threshold: number | null) =>
@@ -154,7 +171,22 @@ async function refreshThreshold($: EngineInterface) {
   const { context } = await $.session.usage({ breakdown: 'summary' })
   const b = context.breakdown
   const t = b !== undefined && b.isAutoCompactEnabled ? b.autoCompactThreshold ?? null : null
-  await update($, compactAt, () => t)
+  const rows: Breakdown | null =
+    b === undefined
+      ? null
+      : {
+          rows: b.categories.map(c => ({
+            name: c.name,
+            tokens: c.tokens,
+            color: c.color,
+            isDeferred: c.isDeferred,
+            kind: c.kind,
+          })),
+          total: b.totalTokens,
+          max: b.rawMaxTokens,
+          model: b.model,
+        }
+  await Promise.all([update($, compactAt, () => t), update($, breakdown, () => rows)])
 }
 
 /** A 5h reading whose reset moment has passed belongs to the old window: show it as empty. */
@@ -226,6 +258,16 @@ async function checkReset($: EngineInterface, nowMs: number) {
 async function syncHidden($: EngineInterface) {
   const stored = await $.store.get('isHidden')
   await update($, isHidden, () => stored === true)
+}
+
+async function openContext($: EngineInterface) {
+  await $.ui.open({ id: CONTEXT_PANE, title: 'Context', focus: true })
+  await refreshThreshold($).catch(() => {})
+}
+
+async function openUsage($: EngineInterface) {
+  await $.ui.open({ id: USAGE_PANE, title: 'Usage', focus: true })
+  await refreshUsage($).catch(() => {})
 }
 
 async function toggleHidden($: EngineInterface) {
@@ -410,9 +452,10 @@ export const register: Register = on => {
             </Text>
           ))}
           <Text dimColor>{ctx.off}</Text>
-          <Text bold> {Math.round(percent)}%</Text>
+          <Text> </Text>
+          <Button key="open-context" plain label={`${Math.round(percent)}%`} onPress={() => openContext($)} />
           {five !== undefined && fiveDots !== null ? (
-            <Text>
+            <Box>
               <Text dimColor> · 5h </Text>
               {gradientCells(fiveDots.on, 0, MINI).map((c, i) => (
                 <Text key={`n${i}`} color={c.color} bold>
@@ -420,13 +463,14 @@ export const register: Register = on => {
                 </Text>
               ))}
               <Text dimColor>{fiveDots.off}</Text>
-              <Text dimColor> {five.percent}%</Text>
-              {fiveReset !== null ? (
-                <Text color={countdownColor(five.percent)} bold>
-                  {' '}↻{fiveReset}
-                </Text>
-              ) : null}
-            </Text>
+              <Text> </Text>
+              <Button
+                key="open-usage"
+                plain
+                label={`${five.percent}%${fiveReset !== null ? ` ↻${fiveReset}` : ''}`}
+                onPress={() => openUsage($)}
+              />
+            </Box>
           ) : null}
           {repo !== null ? (
             <Text>
@@ -465,8 +509,13 @@ export const register: Register = on => {
             {seg.text}
           </Text>
         ))}
-        <Text bold> {pctText(percent)}% </Text>
-        {f !== null ? <Text dimColor>({kilo(f.tokens)}/{kilo(f.window)})</Text> : null}
+        <Text> </Text>
+        <Button
+          key="open-context"
+          plain
+          label={`${pctText(percent)}%${f !== null ? ` (${kilo(f.tokens)}/${kilo(f.window)})` : ''}`}
+          onPress={() => openContext($)}
+        />
         {toCompact !== null && toCompact >= COMPACT_WARN ? (
           <Text color="warning"> ⚠ auto-compact {toCompact}%</Text>
         ) : null}
@@ -474,7 +523,7 @@ export const register: Register = on => {
         {ls
           .filter(l => l.kind === 'five_hour')
           .map(l => (
-            <Text key={l.kind}>
+            <Box key={l.kind}>
               <Text dimColor> · 5h </Text>
               {gradientCells(dots(l.percent).on, 0, DOTS).map((c, i) => (
                 <Text key={`d${i}`} color={c.color} bold>
@@ -482,13 +531,14 @@ export const register: Register = on => {
                 </Text>
               ))}
               <Text dimColor>{dots(l.percent).off}</Text>
-              <Text color={l.percent >= 80 ? 'error' : undefined} dimColor={l.percent < 80}> {l.percent}%</Text>
-              {resetIn(l.resetsAt, t) !== null ? (
-                <Text color={countdownColor(l.percent)} bold>
-                  {' '}↻ {resetIn(l.resetsAt, t)}
-                </Text>
-              ) : null}
-            </Text>
+              <Text> </Text>
+              <Button
+                key="open-usage"
+                plain
+                label={`${l.percent}%${resetIn(l.resetsAt, t) !== null ? ` ↻ ${resetIn(l.resetsAt, t)}` : ''}`}
+                onPress={() => openUsage($)}
+              />
+            </Box>
           ))}
         {ls
           .filter(l => isFable(l.kind))
@@ -539,6 +589,78 @@ export const register: Register = on => {
             ) : null}
           </Box>
         ) : null}
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'Pane', requestId: CONTEXT_PANE }, async ($, e) => {
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const [b, f, threshold] = await Promise.all([read($, breakdown), read($, fill), read($, compactAt)])
+    if (b === null) return <Text dimColor>Reading the context breakdown…</Text>
+    const max = f?.window ?? b.max
+    const used = f?.tokens ?? b.total
+    const live = b.rows.filter(r => !r.isDeferred && r.tokens > 0)
+    const deferred = b.rows.filter(r => r.isDeferred && r.tokens > 0)
+    return (
+      <Box flexDirection="column">
+        <Box>
+          <Text bold>{pctText((used / Math.max(1, max)) * 100)}% used </Text>
+          <Text dimColor>
+            {kilo(used)} / {kilo(max)} · {b.model}
+          </Text>
+        </Box>
+        {threshold !== null ? <Text dimColor>Auto-compacts at {kilo(threshold)}</Text> : null}
+        <Text> </Text>
+        {live.map(r => (
+          <Box key={`r-${r.name}`}>
+            <Text color={r.color}>■ </Text>
+            <Text>{r.name.padEnd(28)}</Text>
+            <Text dimColor>{kilo(r.tokens).padStart(6)} </Text>
+            <Text>{pctText((r.tokens / Math.max(1, b.max)) * 100).padStart(5)}%</Text>
+          </Box>
+        ))}
+        {deferred.length > 0 ? <Text> </Text> : null}
+        {deferred.map(r => (
+          <Box key={`d-${r.name}`}>
+            <Text dimColor>□ {r.name.padEnd(28)}</Text>
+            <Text dimColor>{kilo(r.tokens).padStart(6)}  —</Text>
+          </Box>
+        ))}
+        <Text> </Text>
+        <Button key="close-context" role="dismiss" label="Close" onPress={() => $.ui.close({ id: CONTEXT_PANE })} />
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'Pane', requestId: USAGE_PANE }, async ($, e) => {
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const [ls, t] = await Promise.all([read($, limits), read($, now)])
+    return (
+      <Box flexDirection="column">
+        {ls.length === 0 ? <Text dimColor>No usage reading yet: it arrives with Claude's next reply.</Text> : null}
+        {ls.map(l => {
+          const bar = smoothBar(l.percent)
+          const left = resetIn(l.resetsAt, t)
+          return (
+            <Box key={`u-${l.kind}`} flexDirection="column">
+              <Text bold>{limitName(l.kind)}</Text>
+              <Box>
+                {gradientCells(bar.on, 0, SMOOTH).map((c, i) => (
+                  <Text key={`c${i}`} color={c.color} bold>
+                    {c.ch}
+                  </Text>
+                ))}
+                <Text dimColor>{bar.off}</Text>
+                <Text bold> {l.percent}% used</Text>
+              </Box>
+              <Text color={countdownColor(l.percent)}>{left !== null ? `Resets in ${left}` : 'Reset time unknown'}</Text>
+              <Text> </Text>
+            </Box>
+          )
+        })}
+        <Text dimColor>Weekly and Fable limits show here when Claude Code reports them.</Text>
+        <Text> </Text>
+        <Button key="close-usage" role="dismiss" label="Close" onPress={() => $.ui.close({ id: USAGE_PANE })} />
       </Box>
     )
   })

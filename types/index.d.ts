@@ -1,6 +1,8 @@
 export type ContextFill = { percent: number; tokens: number; window: number }
 export type Limit = { kind: string; percent: number; resetsAt?: string }
 export type GitInfo = { branch: string; changed: number; ahead: number; behind: number }
+export type BreakdownRow = { name: string; tokens: number; color: string; isDeferred: boolean; kind: string }
+export type Breakdown = { rows: BreakdownRow[]; total: number; max: number; model: string }
 export type RunningTool = { id: string; tool: string; detail?: string }
 
 declare module 'claude-code' {
@@ -21,6 +23,7 @@ declare module 'claude-code' {
       resetNoticed: string | null
       git: GitInfo | null
       gitAt: number | null
+      breakdown: Breakdown | null
     }
   }
 }
