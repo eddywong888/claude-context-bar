@@ -71,25 +71,27 @@ export const WARN_AT = 75
 
 /** Grey for the unlit part of every gauge, so the track reads as one strip. */
 const TRACK = '#c9ced6'
-/** The early-warning notch and the quieter auto-compact notch on the track. */
-const NOTCH_WARN = '#b36b00'
-const NOTCH_COMPACT = '#8a929e'
+/** The early-warning marker on the context gauge. */
+const NOTCH_WARN = '#8a5a1f'
+/** The stippled track the empty part of the context gauge is drawn in. */
+const TRACK_DOTS = '#9aa1ab'
 
 /**
- * A gauge as solid cells: lit cells in the gradient, the rest in the track
- * grey, with optional notches replacing the cells at two positions.
+ * The context gauge: lit cells in the gradient, the rest as a light stippled
+ * track, and a thin marker set between two cells at `warnPercent`, so it adds
+ * a line rather than taking a cell. The bar shows only the warning line;
+ * the auto-compact point is reported in text.
  */
-export const trackCells = (percent: number, width: number, warnPercent: number | null, compactPercent: number | null) => {
+export const trackCells = (percent: number, width: number, warnPercent: number | null) => {
   const lit = Math.min(width, Math.max(0, Math.ceil(((percent - 1e-9) / 100) * width)))
-  const cellOf = (p: number | null) => (p === null ? -1 : Math.min(width - 1, Math.max(0, Math.floor((p / 100) * width))))
-  const warn = cellOf(warnPercent)
-  const notch = cellOf(compactPercent)
-  return Array.from({ length: width }, (_, i): { ch: string; color: string; bg?: string } => {
-    const base = i < lit ? gradientAt(width <= 1 ? 0 : i / (width - 1)) : TRACK
-    // The warning point is a thin line drawn over the cell's own colour, so no gap shows around it.
-    if (i === warn) return { ch: '┃', color: NOTCH_WARN, bg: base }
-    return { ch: '█', color: i === notch && i >= lit ? NOTCH_COMPACT : base }
-  })
+  const warn = warnPercent === null ? -1 : Math.min(width, Math.max(0, Math.round((warnPercent / 100) * width)))
+  const out: { ch: string; color: string; dim?: boolean }[] = []
+  for (let i = 0; i <= width; i++) {
+    if (i === warn) out.push({ ch: '┃', color: NOTCH_WARN })
+    if (i === width) break
+    out.push(i < lit ? { ch: '█', color: gradientAt(width <= 1 ? 0 : i / (width - 1)) } : { ch: '░', color: TRACK_DOTS, dim: true })
+  }
+  return out
 }
 
 /** The hidden view's five-cell gauge: ▰ lit in the gradient, ▱ unlit. */
@@ -458,7 +460,6 @@ export const register: Register = on => {
 
     const percent = f?.percent ?? 0
     const toCompact = f === null ? null : compactPercent(f.tokens, threshold)
-    const markAt = f === null || threshold === null || f.window <= 0 ? null : (threshold / f.window) * 100
     const elapsed = start === null || t === 0 ? null : duration(t - start)
 
     const showWork = e.props.isWorking || active.length > 0
@@ -468,9 +469,9 @@ export const register: Register = on => {
     const fable = ls.filter(l => isFable(l.kind))
 
     // One cell per glyph, coloured; the gauges are strips of these.
-    const cells = (list: { ch: string; color: string; bg?: string }[], prefix: string) =>
+    const cells = (list: { ch: string; color: string; dim?: boolean }[], prefix: string) =>
       list.map((c, i) => (
-        <Text key={`${prefix}${i}`} color={c.color} backgroundColor={c.bg} bold>
+        <Text key={`${prefix}${i}`} color={c.color} dimColor={c.dim} bold={c.dim !== true}>
           {c.ch}
         </Text>
       ))
@@ -479,7 +480,7 @@ export const register: Register = on => {
       width === 'mini' ? (
         <Box>{cells(miniCells(percent), 'm')}</Box>
       ) : (
-        <Box>{cells(trackCells(percent, WIDTH, WARN_AT, markAt), 'c')}</Box>
+        <Box>{cells(trackCells(percent, WIDTH, WARN_AT), 'c')}</Box>
       )
 
     const fiveGroup =
@@ -557,7 +558,7 @@ export const register: Register = on => {
           <Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} />
           {f !== null ? (
             <Text dimColor>
-              {kilo(f.tokens)}/{kilo(f.window)}
+              ({kilo(f.tokens)}/{kilo(f.window)})
             </Text>
           ) : null}
         </Box>
@@ -575,7 +576,7 @@ export const register: Register = on => {
         {fable.map(l => (
           <Box key={l.kind} gap={1} alignItems="center">
             <Text dimColor>Fable</Text>
-            <Box>{cells(trackCells(l.percent, SMOOTH, null, null), `f${l.kind}`)}</Box>
+            <Box>{cells(trackCells(l.percent, SMOOTH, null), `f${l.kind}`)}</Box>
             <Text dimColor={l.percent < 50} color={l.percent >= 80 ? 'error' : undefined}>
               {l.percent}%
             </Text>

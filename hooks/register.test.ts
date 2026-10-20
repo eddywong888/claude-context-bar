@@ -130,19 +130,14 @@ test('model ids read as names', () => {
 })
 
 
-test('gauges are solid strips with notches at 75% and the compact point', () => {
-  const strip = trackCells(47, 12, WARN_AT, 96.7)
-  expect(strip.length).toBe(12)
-  expect(strip.filter(c => c.ch === '┃').length).toBe(1)
-  expect(strip[9]?.ch).toBe('┃')
-  expect(strip[9]?.bg).toBe('#c9ced6')
-  expect(trackCells(90, 12, WARN_AT, null)[9]?.bg).not.toBe('#c9ced6')
+test('context gauge: gradient fill, stippled track, thin marker between cells at 75%', () => {
+  const strip = trackCells(47, 12, WARN_AT)
+  const text = strip.map(c => c.ch).join('')
+  expect(text).toBe('██████░░░┃░░░')
   expect(strip[0]?.color).toBe('#117a2e')
-  expect(strip[9]?.color).toBe('#b36b00')
-  expect(strip[11]?.color).toBe('#8a929e')
-  expect(strip[7]?.color).toBe('#c9ced6')
-  // Once the fill passes the compact point, its cell shows the fill, not the notch.
-  expect(trackCells(100, 12, null, 96.7)[11]?.color).toBe('#b31d28')
+  expect(strip.find(c => c.ch === '┃')?.color).toBe('#8a5a1f')
+  // Past 75% the marker sits inside the fill.
+  expect(trackCells(90, 12, WARN_AT).map(c => c.ch).join('')).toBe('█████████┃██░')
 })
 
 test('5h dots: five, lit in the gradient, rings for the rest', () => {
