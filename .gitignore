@@ -1,0 +1,4 @@
+# Types the engine writes when it loads the mod
+.claude-plugin/types/
+tsconfig.json
+.DS_Store
