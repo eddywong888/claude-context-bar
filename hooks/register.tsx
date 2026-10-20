@@ -64,23 +64,32 @@ export const mini = (percent: number, lit: string, unlit: string) => {
   return { on: lit.repeat(f), off: unlit.repeat(MINI - f) }
 }
 
-export type Segment = { text: string; kind: 'fill' | 'empty' | 'mark'; color?: string }
+export type Segment = { text: string; kind: 'fill' | 'empty' | 'mark' | 'tick'; color?: string }
 
-/** The bar as runs of filled, empty and marker cells; the marker replaces the cell where auto-compaction runs. */
-export const markedBar = (percent: number, markPercent: number | null): Segment[] => {
+/** Where the early-warning line sits on the context bar, as a share of the window. */
+export const WARN_AT = 75
+
+/**
+ * The bar as runs of filled, empty and marker cells. The warning line replaces
+ * the cell at `warnPercent`; the auto-compact point, a quieter tick, replaces
+ * the cell at `compactPercent` unless the two share a cell.
+ */
+export const markedBar = (percent: number, warnPercent: number | null, compactPercent: number | null = null): Segment[] => {
   const filled = Math.min(WIDTH, Math.round((percent / 100) * WIDTH))
-  const mark =
-    markPercent === null ? -1 : Math.min(WIDTH - 1, Math.max(0, Math.floor((markPercent / 100) * WIDTH)))
+  const cellOf = (p: number | null) => (p === null ? -1 : Math.min(WIDTH - 1, Math.max(0, Math.floor((p / 100) * WIDTH))))
+  const warn = cellOf(warnPercent)
+  const tick = cellOf(compactPercent)
   const out: Segment[] = []
-  const push = (kind: Segment['kind'], ch: string) => {
+  const pushEmpty = (ch: string) => {
     const last = out[out.length - 1]
-    if (last !== undefined && last.kind === kind && kind === 'empty') last.text += ch
-    else out.push({ kind, text: ch })
+    if (last !== undefined && last.kind === 'empty') last.text += ch
+    else out.push({ kind: 'empty', text: ch })
   }
   for (let i = 0; i < WIDTH; i++) {
-    if (i === mark) push('mark', '┃')
+    if (i === warn) out.push({ kind: 'mark', text: '┃' })
+    else if (i === tick) out.push({ kind: 'tick', text: '╎' })
     else if (i < filled) out.push({ kind: 'fill', text: '█', color: gradientAt(i / (WIDTH - 1)) })
-    else push('empty', '░')
+    else pushEmpty('░')
   }
   return out
 }
@@ -530,11 +539,11 @@ export const register: Register = on => {
     return (
       <Box flexWrap="wrap">
         <Text dimColor>Context </Text>
-        {markedBar(percent, markAt).map((seg, i) => (
+        {markedBar(percent, WARN_AT, markAt).map((seg, i) => (
           <Text
             key={`seg${i}`}
-            color={seg.kind === 'mark' ? 'warning' : seg.color}
-            bold={seg.kind !== 'empty'}
+            color={seg.kind === 'mark' ? 'warning' : seg.kind === 'tick' ? 'inactive' : seg.color}
+            bold={seg.kind === 'fill' || seg.kind === 'mark'}
             dimColor={seg.kind === 'empty'}
           >
             {seg.text}

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { compactPercent, countdownColor, detailOf, dots, duration, gradientAt, gradientCells, hasReset, isFable, clearPassedResets, kilo, limitName, modelName, markedBar, maskSecrets, mini, parseGitStatus, pctText, resetIn, smoothBar, turnLength } from './register'
+import { compactPercent, countdownColor, detailOf, dots, duration, gradientAt, gradientCells, hasReset, isFable, clearPassedResets, kilo, limitName, modelName, markedBar, WARN_AT, maskSecrets, mini, parseGitStatus, pctText, resetIn, smoothBar, turnLength } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -147,4 +147,14 @@ test('model ids read as names', () => {
   expect(modelName('claude-opus-5-5')).toBe('Opus 5.5')
   expect(modelName('claude-fable-5-1')).toBe('Fable 5.1')
   expect(modelName('custom-model')).toBe('custom-model')
+})
+
+test('warning line sits at 75% inside the bar, compact tick near the end', () => {
+  const segs = markedBar(47, WARN_AT, 96.7)
+  const text = segs.map(s => s.text).join('')
+  expect(text.length).toBe(20)
+  expect(text.indexOf('┃')).toBe(15)
+  expect(text.indexOf('╎')).toBe(19)
+  // The warning line sits inside the fill once usage passes it.
+  expect(markedBar(90, WARN_AT, null).map(s => s.text).join('').slice(14, 17)).toBe('█┃█')
 })
