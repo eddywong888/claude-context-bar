@@ -261,13 +261,30 @@ async function syncHidden($: EngineInterface) {
 }
 
 async function openContext($: EngineInterface) {
-  await $.ui.open({ id: CONTEXT_PANE, title: 'Context', focus: true })
-  await refreshThreshold($).catch(() => {})
+  const [opened] = await Promise.all([
+    $.ui.open({ id: CONTEXT_PANE, title: 'Context', focus: true }),
+    refreshThreshold($).catch(() => {}),
+  ])
+  if (!opened.isPlaced) {
+    // No room for the panel here: say the headline figure instead.
+    const f = await read($, fill)
+    $.ui.toast(f === null ? 'No context reading yet' : `Context ${pctText(f.percent)}% (${kilo(f.tokens)}/${kilo(f.window)})`)
+  }
 }
 
 async function openUsage($: EngineInterface) {
-  await $.ui.open({ id: USAGE_PANE, title: 'Usage', focus: true })
-  await refreshUsage($).catch(() => {})
+  const [opened] = await Promise.all([
+    $.ui.open({ id: USAGE_PANE, title: 'Usage', focus: true }),
+    refreshUsage($).catch(() => {}),
+  ])
+  if (!opened.isPlaced) {
+    const [ls, t] = await Promise.all([read($, limits), read($, now)])
+    const five = ls.find(l => l.kind === 'five_hour')
+    const left = five === undefined ? null : resetIn(five.resetsAt, t)
+    $.ui.toast(
+      five === undefined ? 'No usage reading yet' : `5h limit ${five.percent}% used${left !== null ? `, resets in ${left}` : ''}`,
+    )
+  }
 }
 
 async function toggleHidden($: EngineInterface) {
@@ -467,9 +484,15 @@ export const register: Register = on => {
               <Button
                 key="open-usage"
                 plain
-                label={`${five.percent}%${fiveReset !== null ? ` ↻${fiveReset}` : ''}`}
+                dimColor={five.percent < 50}
+                label={`${five.percent}%`}
                 onPress={() => openUsage($)}
               />
+              {fiveReset !== null ? (
+                <Text color={countdownColor(five.percent)} bold>
+                  {' '}↻{fiveReset}
+                </Text>
+              ) : null}
             </Box>
           ) : null}
           {repo !== null ? (
@@ -510,12 +533,12 @@ export const register: Register = on => {
           </Text>
         ))}
         <Text> </Text>
-        <Button
-          key="open-context"
-          plain
-          label={`${pctText(percent)}%${f !== null ? ` (${kilo(f.tokens)}/${kilo(f.window)})` : ''}`}
-          onPress={() => openContext($)}
-        />
+        <Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} />
+        {f !== null ? (
+          <Text dimColor>
+            {' '}({kilo(f.tokens)}/{kilo(f.window)})
+          </Text>
+        ) : null}
         {toCompact !== null && toCompact >= COMPACT_WARN ? (
           <Text color="warning"> ⚠ auto-compact {toCompact}%</Text>
         ) : null}
@@ -532,12 +555,13 @@ export const register: Register = on => {
               ))}
               <Text dimColor>{dots(l.percent).off}</Text>
               <Text> </Text>
-              <Button
-                key="open-usage"
-                plain
-                label={`${l.percent}%${resetIn(l.resetsAt, t) !== null ? ` ↻ ${resetIn(l.resetsAt, t)}` : ''}`}
-                onPress={() => openUsage($)}
-              />
+              <Button key="open-usage" plain dimColor={l.percent < 50} label={`${l.percent}%`} onPress={() => openUsage($)} />
+              {l.percent >= 80 ? <Text color="error"> ⚠</Text> : null}
+              {resetIn(l.resetsAt, t) !== null ? (
+                <Text color={countdownColor(l.percent)} bold>
+                  {' '}↻ {resetIn(l.resetsAt, t)}
+                </Text>
+              ) : null}
             </Box>
           ))}
         {ls
@@ -596,11 +620,25 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: CONTEXT_PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const [b, f, threshold] = await Promise.all([read($, breakdown), read($, fill), read($, compactAt)])
-    if (b === null) return <Text dimColor>Reading the context breakdown…</Text>
+    if (b === null) {
+      return (
+        <Box flexDirection="column">
+          {f !== null ? (
+            <Text bold>
+              {pctText(f.percent)}% used <Text dimColor>{kilo(f.tokens)} / {kilo(f.window)}</Text>
+            </Text>
+          ) : null}
+          <Text dimColor>The breakdown isn't available yet; it updates at the end of each turn.</Text>
+          <Text> </Text>
+          <Button key="close-context" role="dismiss" label="Close" onPress={() => $.ui.close({ id: CONTEXT_PANE })} />
+        </Box>
+      )
+    }
     const max = f?.window ?? b.max
     const used = f?.tokens ?? b.total
     const live = b.rows.filter(r => !r.isDeferred && r.tokens > 0)
     const deferred = b.rows.filter(r => r.isDeferred && r.tokens > 0)
+    const isSpare = (kind: string) => kind === 'free' || kind === 'buffer'
     return (
       <Box flexDirection="column">
         <Box>
@@ -613,10 +651,10 @@ export const register: Register = on => {
         <Text> </Text>
         {live.map(r => (
           <Box key={`r-${r.name}`}>
-            <Text color={r.color}>■ </Text>
-            <Text>{r.name.padEnd(28)}</Text>
+            <Text color={r.color}>{isSpare(r.kind) ? '□ ' : '■ '}</Text>
+            <Text dimColor={isSpare(r.kind)}>{r.name.padEnd(28)}</Text>
             <Text dimColor>{kilo(r.tokens).padStart(6)} </Text>
-            <Text>{pctText((r.tokens / Math.max(1, b.max)) * 100).padStart(5)}%</Text>
+            <Text dimColor={isSpare(r.kind)}>{pctText((r.tokens / Math.max(1, max)) * 100).padStart(5)}%</Text>
           </Box>
         ))}
         {deferred.length > 0 ? <Text> </Text> : null}
@@ -658,7 +696,9 @@ export const register: Register = on => {
             </Box>
           )
         })}
-        <Text dimColor>Weekly and Fable limits show here when Claude Code reports them.</Text>
+        {ls.every(l => l.kind === 'five_hour') ? (
+          <Text dimColor>Weekly and Fable limits show here when Claude Code reports them.</Text>
+        ) : null}
         <Text> </Text>
         <Button key="close-usage" role="dismiss" label="Close" onPress={() => $.ui.close({ id: USAGE_PANE })} />
       </Box>

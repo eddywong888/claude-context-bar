@@ -155,3 +155,70 @@ test('clicking the numbers opens the context and usage panels', async ($, on) =>
   await pane.unmount()
   await ui.unmount()
 })
+
+test('usage pane lists each limit, and says when there is none', async ($, on) => {
+  mock.clock(on)
+  let reported: unknown[] = []
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { tokens: 1, window: 200_000, percent: 0 }, rateLimits: reported },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  const PANE = {
+    plugin: 'context-bar',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'context-bar-usage',
+    props: { title: 'Usage', isFocused: true, bodyColumns: 80, placement: 'dock' },
+  } as const
+  const read = async (pane: { findAll: (q: { type: string }) => Promise<{ text: string }[]> }) =>
+    (await pane.findAll({ type: 'Text' })).map(t => t.text).join('|')
+
+  const empty = await $.ui.mount(PANE as never)
+  expect(await read(empty)).toContain('No usage reading yet')
+  await empty.unmount()
+
+  reported = [
+    { kind: 'five_hour', percentUsed: 30 },
+    { kind: 'seven_day_fable', percentUsed: 65 },
+  ]
+  await $.tool.call({ tool: 'Read', file_path: '/x' } as never)
+  const full = await $.ui.mount(PANE as never)
+  const text = await read(full)
+  expect(text).toContain('Current session (5h)')
+  expect(text).toContain('Fable (weekly)')
+  expect(text).toContain('65% used')
+  expect(text).not.toContain('show here when Claude Code reports them')
+  await full.unmount()
+})
+
+test('a panel that cannot be placed falls back to a toast', async ($, on) => {
+  mock.clock(on)
+  const toasts: string[] = []
+  on('session.usage', () => ({
+    value: {
+      startedAt: 0,
+      context: { tokens: 50_000, window: 200_000, percent: 25 },
+      rateLimits: [{ kind: 'five_hour', percentUsed: 30 }],
+    },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  on('ui.open', () => ({ value: { isPlaced: false } }) as never)
+  on('ui.toast', (_$, e) => {
+    toasts.push(String((e as { text?: string }).text ?? JSON.stringify(e)))
+    return { value: undefined } as never
+  })
+  const ui = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 160 } as never,
+  })
+  await $.tool.call({ tool: 'Read', file_path: '/x' } as never)
+  await ui.press({ key: 'open-context' })
+  await ui.press({ key: 'open-usage' })
+  expect(toasts.join(' ')).toContain('Context 25% (50k/200k)')
+  expect(toasts.join(' ')).toContain('5h limit 30% used')
+  await ui.unmount()
+})
