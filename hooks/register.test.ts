@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { compactPercent, countdownColor, detailOf, dots, duration, gradientAt, gradientCells, hasReset, isFable, clearPassedResets, kilo, limitName, markedBar, maskSecrets, mini, parseGitStatus, pctText, resetIn, smoothBar, turnLength } from './register'
+import { compactPercent, countdownColor, detailOf, dots, duration, gradientAt, gradientCells, hasReset, isFable, clearPassedResets, kilo, limitName, modelName, markedBar, maskSecrets, mini, parseGitStatus, pctText, resetIn, smoothBar, turnLength } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -141,4 +141,10 @@ test('usage panel names and long countdowns', () => {
   expect(limitName('seven_day')).toBe('Weekly')
   const now = Date.parse('2026-10-20T10:00:00Z')
   expect(resetIn('2026-10-23T08:00:00Z', now)).toBe('2d 22h')
+})
+
+test('model ids read as names', () => {
+  expect(modelName('claude-opus-5-5')).toBe('Opus 5.5')
+  expect(modelName('claude-fable-5-1')).toBe('Fable 5.1')
+  expect(modelName('custom-model')).toBe('custom-model')
 })

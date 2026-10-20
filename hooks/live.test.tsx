@@ -142,17 +142,20 @@ test('clicking the numbers opens the context and usage panels', async ($, on) =>
   await ui.press({ key: 'open-usage' })
   expect(opened).toEqual(['context-bar-context', 'context-bar-usage'])
 
-  const pane = await $.ui.mount({
-    plugin: 'context-bar',
-    surface: 'desktop',
-    component: 'Pane',
-    requestId: 'context-bar-context',
-    props: { title: 'Context', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
-  })
-  const paneText = (await pane.findAll({ type: 'Text' })).map(t => t.text).join('|')
-  expect(paneText).toContain('Messages')
-  expect(paneText).toContain('Auto-compacts at 967k')
-  await pane.unmount()
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const pane = await $.ui.mount({
+      plugin: 'context-bar',
+      surface,
+      component: 'Pane',
+      requestId: 'context-bar-context',
+      props: { title: 'Context', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
+    })
+    const paneText = (await pane.findAll({ type: 'Text' })).map(t => t.text).join('|')
+    expect(paneText).toContain('Messages')
+    expect(paneText).toContain('auto-compacts at 967k')
+    expect(paneText).toContain('Opus 5.5')
+    await pane.unmount()
+  }
   await ui.unmount()
 })
 
@@ -175,7 +178,7 @@ test('usage pane lists each limit, and says when there is none', async ($, on) =
     (await pane.findAll({ type: 'Text' })).map(t => t.text).join('|')
 
   const empty = await $.ui.mount(PANE as never)
-  expect(await read(empty)).toContain('No usage reading yet')
+  expect(await read(empty)).toContain('Your usage appears')
   await empty.unmount()
 
   reported = [
@@ -183,13 +186,15 @@ test('usage pane lists each limit, and says when there is none', async ($, on) =
     { kind: 'seven_day_fable', percentUsed: 65 },
   ]
   await $.tool.call({ tool: 'Read', file_path: '/x' } as never)
-  const full = await $.ui.mount(PANE as never)
-  const text = await read(full)
-  expect(text).toContain('Current session (5h)')
-  expect(text).toContain('Fable (weekly)')
-  expect(text).toContain('65% used')
-  expect(text).not.toContain('show here when Claude Code reports them')
-  await full.unmount()
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const full = await $.ui.mount({ ...PANE, surface } as never)
+    const text = await read(full)
+    expect(text).toContain('Current session (5h)')
+    expect(text).toContain('Fable (weekly)')
+    expect(text).toContain('65%')
+    expect(text).not.toContain('appear here once Claude Code reports them')
+    await full.unmount()
+  }
 })
 
 test('a panel that cannot be placed falls back to a toast', async ($, on) => {

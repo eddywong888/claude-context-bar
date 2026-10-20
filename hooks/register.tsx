@@ -132,6 +132,14 @@ export const resetIn = (resetsAt: string | undefined, nowMs: number) => {
   return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h`
 }
 
+/** `claude-opus-5-5` → `Opus 5.5`; anything else is shown as given. */
+export const modelName = (id: string) => {
+  const m = /^claude-([a-z]+)-(\d+)-(\d+)/.exec(id)
+  if (m === null) return id
+  const family = m[1] ?? ''
+  return `${family.charAt(0).toUpperCase()}${family.slice(1)} ${m[2]}.${m[3]}`
+}
+
 /** A rate-limit window's name as the usage panel shows it. */
 export const limitName = (kind: string) =>
   kind === 'five_hour'
@@ -618,89 +626,129 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: CONTEXT_PANE }, async ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
     const [b, f, threshold] = await Promise.all([read($, breakdown), read($, fill), read($, compactAt)])
+    const max = f?.window ?? b?.max ?? 0
+    const used = f?.tokens ?? b?.total ?? 0
+    const share = (n: number) => (max > 0 ? (n / max) * 100 : 0)
+
+    const headline = (
+      <Box flexDirection="column" marginBottom={1}>
+        <Box alignItems="flex-end" gap={1}>
+          <Text bold>
+            {pctText(share(used))}%
+          </Text>
+          <Text dimColor>
+            of {kilo(max)} used
+          </Text>
+        </Box>
+        <Text dimColor>
+          {kilo(used)} tokens{b !== null ? ` · ${modelName(b.model)}` : ''}
+          {threshold !== null ? ` · auto-compacts at ${kilo(threshold)}` : ''}
+        </Text>
+      </Box>
+    )
+
     if (b === null) {
       return (
-        <Box flexDirection="column">
-          {f !== null ? (
-            <Text bold>
-              {pctText(f.percent)}% used <Text dimColor>{kilo(f.tokens)} / {kilo(f.window)}</Text>
-            </Text>
-          ) : null}
-          <Text dimColor>The breakdown isn't available yet; it updates at the end of each turn.</Text>
-          <Text> </Text>
-          <Button key="close-context" role="dismiss" label="Close" onPress={() => $.ui.close({ id: CONTEXT_PANE })} />
+        <Box flexDirection="column" paddingX={1}>
+          {headline}
+          <Text dimColor>The breakdown appears after Claude's next reply.</Text>
         </Box>
       )
     }
-    const max = f?.window ?? b.max
-    const used = f?.tokens ?? b.total
-    const live = b.rows.filter(r => !r.isDeferred && r.tokens > 0)
-    const deferred = b.rows.filter(r => r.isDeferred && r.tokens > 0)
+
     const isSpare = (kind: string) => kind === 'free' || kind === 'buffer'
-    return (
-      <Box flexDirection="column">
-        <Box>
-          <Text bold>{pctText((used / Math.max(1, max)) * 100)}% used </Text>
+    const inUse = b.rows.filter(r => !r.isDeferred && !isSpare(r.kind) && r.tokens > 0)
+    const spare = b.rows.filter(r => !r.isDeferred && isSpare(r.kind) && r.tokens > 0)
+    const later = b.rows.filter(r => r.isDeferred && r.tokens > 0)
+
+    const row = (r: { name: string; tokens: number; color: string }, faint: boolean, showShare: boolean) => (
+      <Box key={`${r.name}-${faint}-${showShare}`} gap={1}>
+        <Text color={faint ? 'inactive' : r.color}>{faint ? '○' : '●'}</Text>
+        <Box flexGrow={1}>
+          <Text dimColor={faint}>{r.name}</Text>
+        </Box>
+        <Box width={7} justifyContent="flex-end">
           <Text dimColor>
-            {kilo(used)} / {kilo(max)} · {b.model}
+            {kilo(r.tokens)}
           </Text>
         </Box>
-        {threshold !== null ? <Text dimColor>Auto-compacts at {kilo(threshold)}</Text> : null}
-        <Text> </Text>
-        {live.map(r => (
-          <Box key={`r-${r.name}`}>
-            <Text color={r.color}>{isSpare(r.kind) ? '□ ' : '■ '}</Text>
-            <Text dimColor={isSpare(r.kind)}>{r.name.padEnd(28)}</Text>
-            <Text dimColor>{kilo(r.tokens).padStart(6)} </Text>
-            <Text dimColor={isSpare(r.kind)}>{pctText((r.tokens / Math.max(1, max)) * 100).padStart(5)}%</Text>
-          </Box>
-        ))}
-        {deferred.length > 0 ? <Text> </Text> : null}
-        {deferred.map(r => (
-          <Box key={`d-${r.name}`}>
-            <Text dimColor>□ {r.name.padEnd(28)}</Text>
-            <Text dimColor>{kilo(r.tokens).padStart(6)}  —</Text>
-          </Box>
-        ))}
-        <Text> </Text>
-        <Button key="close-context" role="dismiss" label="Close" onPress={() => $.ui.close({ id: CONTEXT_PANE })} />
+        <Box width={7} justifyContent="flex-end">
+          <Text dimColor={faint}>
+            {showShare ? `${pctText(share(r.tokens))}%` : ''}
+          </Text>
+        </Box>
+      </Box>
+    )
+
+    const section = (title: string, rows: typeof inUse, faint: boolean, showShare: boolean) =>
+      rows.length === 0 ? null : (
+        <Box key={title} flexDirection="column" marginTop={1}>
+          <Text bold dimColor>
+            {title}
+          </Text>
+          {rows.map(r => row(r, faint, showShare))}
+        </Box>
+      )
+
+    return (
+      <Box flexDirection="column" paddingX={1}>
+        {headline}
+        <Box height={1} width="100%">
+          {inUse.map(r => (
+            <Box key={`s-${r.name}`} width={`${Math.max(1, Math.round(share(r.tokens)))}%`} height={1} backgroundColor={r.color} />
+          ))}
+          <Box flexGrow={1} height={1} backgroundColor="inactive" />
+        </Box>
+        {section('In use', inUse, false, true)}
+        {section('Room left', spare, true, true)}
+        {section('Loaded when needed', later, true, false)}
       </Box>
     )
   })
 
   on('ui.render', { component: 'Pane', requestId: USAGE_PANE }, async ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
     const [ls, t] = await Promise.all([read($, limits), read($, now)])
+    if (ls.length === 0) {
+      return (
+        <Box paddingX={1}>
+          <Text dimColor>Your usage appears after Claude's next reply.</Text>
+        </Box>
+      )
+    }
     return (
-      <Box flexDirection="column">
-        {ls.length === 0 ? <Text dimColor>No usage reading yet: it arrives with Claude's next reply.</Text> : null}
+      <Box flexDirection="column" paddingX={1} gap={1}>
         {ls.map(l => {
-          const bar = smoothBar(l.percent)
           const left = resetIn(l.resetsAt, t)
+          const pct = Math.min(100, Math.max(0, l.percent))
           return (
             <Box key={`u-${l.kind}`} flexDirection="column">
               <Text bold>{limitName(l.kind)}</Text>
-              <Box>
-                {gradientCells(bar.on, 0, SMOOTH).map((c, i) => (
-                  <Text key={`c${i}`} color={c.color} bold>
-                    {c.ch}
+              <Box justifyContent="space-between" alignItems="flex-end">
+                <Box alignItems="flex-end" gap={1}>
+                  <Text bold color={gradientAt(pct / 100)}>
+                    {l.percent}%
                   </Text>
-                ))}
-                <Text dimColor>{bar.off}</Text>
-                <Text bold> {l.percent}% used</Text>
+                  <Text dimColor>used</Text>
+                </Box>
+                <Text color={left !== null ? countdownColor(l.percent) : undefined} dimColor={left === null}>
+                  {left !== null ? `resets in ${left}` : 'reset time not reported'}
+                </Text>
               </Box>
-              <Text color={countdownColor(l.percent)}>{left !== null ? `Resets in ${left}` : 'Reset time unknown'}</Text>
-              <Text> </Text>
+              <Box height={1} width="100%">
+                {pct > 0 ? <Box width={`${Math.max(1, Math.round(pct))}%`} height={1} backgroundColor={gradientAt(pct / 100)} /> : null}
+                <Box flexGrow={1} height={1} backgroundColor="inactive" />
+              </Box>
             </Box>
           )
         })}
         {ls.every(l => l.kind === 'five_hour') ? (
-          <Text dimColor>Weekly and Fable limits show here when Claude Code reports them.</Text>
+          <Text dimColor>
+            Weekly limits, including Fable, appear here once Claude Code reports them.
+          </Text>
         ) : null}
-        <Text> </Text>
-        <Button key="close-usage" role="dismiss" label="Close" onPress={() => $.ui.close({ id: USAGE_PANE })} />
       </Box>
     )
   })
