@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, modelName, parseGitStatus, pctText, resetIn, trackCells, turnLength, WARN_AT } from './register'
+import { clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, modelName, parseGitStatus, pctText, resetIn, miniCells, trackCells, turnLength, WARN_AT } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -133,7 +133,8 @@ test('model ids read as names', () => {
 test('gauges are solid strips with notches at 75% and the compact point', () => {
   const strip = trackCells(47, 12, WARN_AT, 96.7)
   expect(strip.length).toBe(12)
-  expect(strip.every(c => c.ch === '█')).toBe(true)
+  expect(strip.filter(c => c.ch === '┃').length).toBe(1)
+  expect(strip[9]?.ch).toBe('┃')
   expect(strip[0]?.color).toBe('#117a2e')
   expect(strip[9]?.color).toBe('#b36b00')
   expect(strip[11]?.color).toBe('#8a929e')
@@ -146,4 +147,8 @@ test('5h dots: five, lit in the gradient, rings for the rest', () => {
   const d = dotCells(30)
   expect(d.map(c => c.ch).join('')).toBe('●●○○○')
   expect(dotCells(2)[0]?.ch).toBe('●')
+})
+
+test('hidden view gauge uses ▰ and ▱', () => {
+  expect(miniCells(51).map(c => c.ch).join('')).toBe('▰▰▰▱▱')
 })

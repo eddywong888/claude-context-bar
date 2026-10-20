@@ -85,10 +85,17 @@ export const trackCells = (percent: number, width: number, warnPercent: number |
   const warn = cellOf(warnPercent)
   const notch = cellOf(compactPercent)
   return Array.from({ length: width }, (_, i) => ({
-    ch: '█',
+    // The warning point is a thin line on the strip; every other cell is solid.
+    ch: i === warn ? '┃' : '█',
     color:
       i === warn ? NOTCH_WARN : i === notch && i >= lit ? NOTCH_COMPACT : i < lit ? gradientAt(width <= 1 ? 0 : i / (width - 1)) : TRACK,
   }))
+}
+
+/** The hidden view's five-cell gauge: ▰ lit in the gradient, ▱ unlit. */
+export const miniCells = (percent: number) => {
+  const { on, off } = mini(percent, '▰', '▱')
+  return [...gradientCells(on, 0, MINI), ...[...off].map(ch => ({ ch, color: TRACK }))]
 }
 
 /** Five dots for the 5h window: lit ones in the gradient, the rest as rings. */
@@ -470,7 +477,7 @@ export const register: Register = on => {
 
     const contextGauge = (width: 'full' | 'mini') =>
       width === 'mini' ? (
-        <Box>{cells(trackCells(percent, MINI, null, null), 'm')}</Box>
+        <Box>{cells(miniCells(percent), 'm')}</Box>
       ) : (
         <Box>{cells(trackCells(percent, WIDTH, WARN_AT, markAt), 'c')}</Box>
       )
