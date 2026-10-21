@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, inksOf, isFable, isTheme, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
+import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, fillFrom, hasReset, inksOf, isFable, isTheme, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -257,4 +257,13 @@ test('the default skin leaves the panel layout alone; tones pass unknown colours
   expect(inksOf(THEMES['hermes']!).pane.flexGrow).toBe(1)
   expect(inksOf(THEMES['hermes']!).tone('permission')).toBe('permission')
   expect(inksOf(THEMES['hermes']!).tone('claude')).toBe('#f7a96b')
+})
+
+test('after a compaction the fill comes from the breakdown until the next reply', () => {
+  const stale = { tokens: 677_000, percent: 68, window: 1_000_000 }
+  expect(fillFrom(stale, 124_000, false)).toEqual({ percent: 67.7, tokens: 677_000, window: 1_000_000 })
+  expect(fillFrom(stale, 124_000, true)).toEqual({ percent: 12.4, tokens: 124_000, window: 1_000_000, estimated: true })
+  // Just compacted, the usage figures are absent: the breakdown fills in rather than 0%.
+  expect(fillFrom({ window: 1_000_000 }, 124_000, false)?.tokens).toBe(124_000)
+  expect(fillFrom({ window: 1_000_000 }, null, false)).toBe(null)
 })

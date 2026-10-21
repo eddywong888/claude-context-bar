@@ -1,4 +1,5 @@
-export type ContextFill = { percent: number; tokens: number; window: number }
+/** `estimated`: read from the /context breakdown, as after a compaction, until the next reply reports real figures. */
+export type ContextFill = { percent: number; tokens: number; window: number; estimated?: boolean }
 export type Limit = { kind: string; percent: number; resetsAt?: string }
 export type GitInfo = { branch: string; changed: number; ahead: number; behind: number }
 export type BreakdownRow = { name: string; tokens: number; color: string; isDeferred: boolean; kind: string }

@@ -32,7 +32,7 @@ To update later:
 
 | Part | What it means |
 |---|---|
-| **Context** gauge | How full the context window is, in a gradient from calm to full. The thin line marks 75%. The figure after it is the percent used, then tokens used out of the window, then how much the last turn added. |
+| **Context** gauge | How full the context window is, in a gradient from calm to full. The thin line marks 75%. The figure after it is the percent used, then tokens used out of the window, then how much the last turn added. Right after a compaction or `/clear` the figure is an estimate from `/context`, marked `~`, until Claude's next reply. |
 | ⚠ auto-compact | Shows once the context is 85% of the way to the point where Claude Code compacts on its own. A **Compact** button appears from 70%. |
 | **5h** dots | Your 5-hour usage: five dots, one per 20%. The ↻ countdown is the time until it resets, blue at first and amber, then red, as the limit nears. A notice shows when it resets. |
 | **Fable** gauge | Shown only when Claude Code reports a Fable usage window. |

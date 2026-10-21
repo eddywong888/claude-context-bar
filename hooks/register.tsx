@@ -473,17 +473,40 @@ async function refreshThreshold($: EngineInterface) {
 export const clearPassedResets = (list: Limit[], nowMs: number): Limit[] =>
   list.map(l => (l.kind === 'five_hour' && hasReset(l.resetsAt, nowMs) ? { ...l, percent: 0 } : l))
 
+/**
+ * True from a compaction or /clear until the next reply. Until then the usage
+ * figures are still the last reply's (or absent), so the fill is read from the
+ * /context breakdown instead, which measures the conversation as it is now.
+ */
+let contextShrank = false
+
+/** After a compaction or /clear, wherever it came from: estimate the fill and redraw. */
+async function afterShrink($: EngineInterface) {
+  contextShrank = true
+  await refreshThreshold($).catch(() => {})
+  await refreshUsage($, { checkWindow: false }).catch(() => {})
+}
+
+/** The fill from the usage figures, or from the breakdown while those are stale or absent. */
+export const fillFrom = (
+  context: { tokens?: number; percent?: number; window: number },
+  breakdownTotal: number | null,
+  preferBreakdown: boolean,
+): ContextFill | null => {
+  const pct = (tokens: number) => (context.window > 0 ? Math.round((tokens / context.window) * 1000) / 10 : 0)
+  if (breakdownTotal !== null && (preferBreakdown || context.tokens === undefined)) {
+    return { percent: pct(breakdownTotal), tokens: breakdownTotal, window: context.window, estimated: true }
+  }
+  if (context.tokens === undefined) return null
+  return { percent: context.window > 0 ? pct(context.tokens) : context.percent ?? 0, tokens: context.tokens, window: context.window }
+}
+
 async function refreshUsage($: EngineInterface, opts: { checkWindow: boolean } = { checkWindow: true }) {
-  const [usage, at, prev] = await Promise.all([$.session.usage(), $.clock.now(), read($, fill)])
+  const [plain, at, prev] = await Promise.all([$.session.usage(), $.clock.now(), read($, fill)])
+  // Ask for the breakdown only when the plain figures cannot be trusted; it costs more.
+  const usage = contextShrank || plain.context.tokens === undefined ? await $.session.usage({ breakdown: 'summary' }).catch(() => plain) : plain
   const { context } = usage
-  const next: ContextFill | null =
-    context.percent === undefined || context.tokens === undefined
-      ? null
-      : {
-          percent: context.window > 0 ? Math.round((context.tokens / context.window) * 1000) / 10 : context.percent,
-          tokens: context.tokens,
-          window: context.window,
-        }
+  const next = fillFrom(context, context.breakdown?.totalTokens ?? null, contextShrank)
   const nextLimits: Limit[] = clearPassedResets(
     usage.rateLimits.map(l => ({ kind: l.kind, percent: Math.round(l.percentUsed), resetsAt: l.resetsAt })),
     at,
@@ -627,6 +650,7 @@ async function compactNow($: EngineInterface) {
   $.ui.toast(busy ? 'Compact queued: it runs when Claude finishes this turn' : 'Compacting the conversation…')
   try {
     await runCompact($)
+    await afterShrink($)
     if (!busy) $.ui.toast('Compacted')
   } catch (err) {
     $.ui.toast(`Compact failed: ${String(err)}`)
@@ -684,6 +708,8 @@ async function compactEarly($: EngineInterface) {
     } finally {
       selfCompacting = false
     }
+    contextShrank = true
+    await refreshThreshold($).catch(() => {})
     await refreshUsage($, { checkWindow: false })
     const after = await read($, fill)
     const pctAfter = after === null ? null : compactPercent(after.tokens, threshold)
@@ -882,15 +908,23 @@ export const register: Register = on => {
   // Any compaction (a panel button, /compact, auto-compaction) refreshes the figures.
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
-    if (e.agentId === undefined && !selfCompacting) {
-      await refreshThreshold($).catch(() => {})
-      await refreshUsage($, { checkWindow: false }).catch(() => {})
-    }
+    if (e.agentId === undefined && !selfCompacting) await afterShrink($)
     return result
   })
 
+  // A typed /compact or /clear. Another plugin may pass session.compact on past
+  // this mod's hook, so the command is watched too.
+  for (const command of ['compact', 'clear']) {
+    on('command.run', { command }, async ($, e, next) => {
+      const result = await next(e)
+      await afterShrink($)
+      return result
+    })
+  }
+
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {
+      contextShrank = false
       const at = await $.clock.now().catch(() => null)
       if (at !== null) await update($, turnStartedAt, () => at).catch(() => {})
       await update($, toolsTurn, () => 0).catch(() => {})
@@ -961,6 +995,8 @@ export const register: Register = on => {
     const act = tools[tools.length - 1] ?? null
 
     const percent = f?.percent ?? 0
+    // Estimated from the breakdown after a compaction, until the next reply.
+    const approx = f?.estimated === true ? '~' : ''
     const toCompact = f === null ? null : compactPercent(f.tokens, threshold)
     const elapsed = start === null || t === 0 ? null : duration(t - start)
 
@@ -1067,7 +1103,7 @@ export const register: Register = on => {
         <Box flexWrap="wrap" columnGap={2} alignItems="center" {...ink.band}>
           <Box gap={1} alignItems="center">
             {contextGauge('mini')}
-            {trayed(<Button key="open-context" plain label={`${Math.round(percent)}%`} onPress={() => openContext($)} />)}
+            {trayed(<Button key="open-context" plain label={`${approx}${Math.round(percent)}%`} onPress={() => openContext($)} />)}
           </Box>
           {fiveGroup}
           {gitGroup(true)}
@@ -1083,7 +1119,7 @@ export const register: Register = on => {
         <Box gap={1} alignItems="center">
           {label('Context')}
           {contextGauge('full')}
-          {trayed(<Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} />)}
+          {trayed(<Button key="open-context" plain label={`${approx}${pctText(percent)}%`} onPress={() => openContext($)} />)}
           {f !== null ? (
             <Text {...ink.faint}>
               ({kilo(f.tokens)}/{kilo(f.window)})
@@ -1153,6 +1189,7 @@ export const register: Register = on => {
       <Box flexDirection="column" marginBottom={1}>
         <Box alignItems="flex-end" gap={1}>
           <Text bold {...ink.plain}>
+            {f?.estimated === true ? '~' : ''}
             {pctText(share(used))}%
           </Text>
           <Text {...ink.faint}>
@@ -1340,7 +1377,10 @@ export const register: Register = on => {
           label="Clear chat"
           onPress={() => {
             $.ui.toast('Clearing the conversation…')
-            $.command.run({ command: 'clear' }).catch(err => $.ui.toast(`Clear failed: ${String(err)}`))
+            $.command
+              .run({ command: 'clear' })
+              .then(() => afterShrink($))
+              .catch(err => $.ui.toast(`Clear failed: ${String(err)}`))
           }}
         />
       </Box>

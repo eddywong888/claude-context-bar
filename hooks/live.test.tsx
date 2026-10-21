@@ -703,3 +703,49 @@ test('italic-label skins draw the band', async ($, on) => {
     await band.unmount()
   }
 })
+
+test('a typed /compact redraws from the breakdown, marked ~, until the next reply', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  let compacted = false
+  on('session.usage', (_$, e) => ({
+    value: {
+      startedAt: 0,
+      context: {
+        tokens: 677_000, // the last reply's figure: stale after the compaction
+        window: 1_000_000,
+        percent: 68,
+        breakdown: (e as { breakdown?: string }).breakdown !== undefined
+          ? {
+              categories: [], totalTokens: compacted ? 124_000 : 677_000, maxTokens: 1_000_000, rawMaxTokens: 1_000_000,
+              autocompactSource: 'auto', percentage: 12, gridRows: [], model: 'claude-fable-5',
+              memoryFiles: [], mcpTools: [], agents: [],
+              isAutoCompactEnabled: true, autoCompactThreshold: 967_000,
+            }
+          : undefined,
+      },
+      rateLimits: [],
+    },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  on('turn.start', (_$, e) => ({ turnId: (e as { turnId?: string }).turnId ?? 't' }) as never)
+  on('command.run', { command: 'compact' }, () => {
+    compacted = true
+    return { text: '' } as never
+  })
+  const band = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 200 } as never,
+  })
+  await $.tool.call({ tool: 'Read', file_path: '/x' } as never)
+  expect((await band.find({ key: 'open-context' }))?.props.label).toBe('67.7%')
+  await $.command.run({ command: 'compact', args: '' } as never)
+  expect((await band.find({ key: 'open-context' }))?.props.label).toBe('~12.4%')
+  await $.turn.start({ text: 'next', turnId: 't2' } as never)
+  await $.tool.call({ tool: 'Read', file_path: '/y' } as never)
+  expect((await band.find({ key: 'open-context' }))?.props.label).toBe('67.7%') // the reply's own figure again
+  await band.unmount()
+})
