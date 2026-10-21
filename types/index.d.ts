@@ -20,6 +20,8 @@ declare module 'claude-code' {
       turnStartedAt: number | null
       tickOwner: string | null
       soundOn: boolean
+      autoCompactOn: boolean
+      modelInUse: { model: string; effort?: string } | null
       isHidden: boolean
       resetNoticed: string | null
       git: GitInfo | null

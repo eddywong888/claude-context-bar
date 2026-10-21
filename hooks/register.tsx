@@ -18,6 +18,8 @@ const resetNoticed = atom({ plugin: 'context-bar', key: 'resetNoticed' } as cons
 const git = atom({ plugin: 'context-bar', key: 'git' } as const, null)
 const gitAt = atom({ plugin: 'context-bar', key: 'gitAt' } as const, null)
 const breakdown = atom({ plugin: 'context-bar', key: 'breakdown' } as const, null)
+const autoCompactOn = atom({ plugin: 'context-bar', key: 'autoCompactOn' } as const, false)
+const modelInUse = atom({ plugin: 'context-bar', key: 'modelInUse' } as const, null)
 const soundOn = atom({ plugin: 'context-bar', key: 'soundOn' } as const, true)
 const tickOwner = atom({ plugin: 'context-bar', key: 'tickOwner' } as const, null)
 
@@ -27,6 +29,8 @@ const WIDTH = 12
 /** Cells in the Fable gauge. */
 const SMOOTH = 8
 const COMPACT_WARN = 85
+/** With early compaction on, the conversation compacts at this share of the way to auto-compact. */
+const EARLY_COMPACT_AT = 90
 const ACTIVE = ['pending', 'running', 'waiting']
 /** Tools that can change files, after which the git status is read again. */
 const WRITERS = ['Bash', 'Edit', 'Write', 'NotebookEdit', 'MultiEdit']
@@ -317,6 +321,34 @@ async function syncSound($: EngineInterface) {
   await update($, soundOn, () => stored !== false)
 }
 
+async function toggleAutoCompact($: EngineInterface) {
+  const next = await update($, autoCompactOn, was => !was)
+  await $.store.set('autoCompactOn', next).catch(() => {})
+  $.ui.toast(next ? `Will compact at ${EARLY_COMPACT_AT}% of the way to auto-compact` : 'Early compaction off')
+}
+
+async function syncAutoCompact($: EngineInterface) {
+  const stored = await $.store.get('autoCompactOn')
+  await update($, autoCompactOn, () => stored === true)
+}
+
+/** With early compaction on, compacts once the context is nearly at the auto-compact point. */
+async function maybeCompactEarly($: EngineInterface) {
+  if (!(await read($, autoCompactOn))) return
+  const [f, threshold] = await Promise.all([read($, fill), read($, compactAt)])
+  const pct = f === null ? null : compactPercent(f.tokens, threshold)
+  if (pct === null || pct < EARLY_COMPACT_AT) return
+  // Turn it off before compacting, so a failure cannot loop.
+  await update($, autoCompactOn, () => false)
+  $.ui.toast(`Context ${pct}% of the way to auto-compact: compacting now`)
+  try {
+    await $.session.compact()
+    $.ui.toast('Compacted')
+  } finally {
+    await update($, autoCompactOn, () => true)
+  }
+}
+
 async function toggleHidden($: EngineInterface) {
   const next = await update($, isHidden, was => !was)
   await $.store.set('isHidden', next).catch(() => {})
@@ -392,6 +424,7 @@ export const register: Register = on => {
       refreshGit($).catch(() => {}),
       syncHidden($).catch(() => {}),
       syncSound($).catch(() => {}),
+      syncAutoCompact($).catch(() => {}),
     ])
     return result
   })
@@ -421,6 +454,14 @@ export const register: Register = on => {
         ])
       }
     }
+  })
+
+  on('turn.step', async function* ($, e, next) {
+    if (e.agentId === undefined) {
+      const effort = typeof e.effort === 'number' ? String(e.effort) : e.effort
+      await update($, modelInUse, () => ({ model: e.model, effort })).catch(() => {})
+    }
+    return yield* next(e)
   })
 
   on('turn.start', async ($, e, next) => {
@@ -458,6 +499,8 @@ export const register: Register = on => {
         syncSound($),
       ])
       if (e.reason === 'answer') ringDone($).catch(() => {})
+      await syncAutoCompact($).catch(() => {})
+      await maybeCompactEarly($).catch(() => {})
     } else {
       await refreshAgents($).catch(() => {})
     }
@@ -622,7 +665,13 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: CONTEXT_PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [b, f, threshold] = await Promise.all([read($, breakdown), read($, fill), read($, compactAt)])
+    const [b, f, threshold, early, inUseModel] = await Promise.all([
+      read($, breakdown),
+      read($, fill),
+      read($, compactAt),
+      read($, autoCompactOn),
+      read($, modelInUse),
+    ])
     const max = f?.window ?? b?.max ?? 0
     const used = f?.tokens ?? b?.total ?? 0
     const share = (n: number) => (max > 0 ? (n / max) * 100 : 0)
@@ -638,7 +687,12 @@ export const register: Register = on => {
           </Text>
         </Box>
         <Text dimColor>
-          {kilo(used)} tokens{b !== null ? ` · ${modelName(b.model)}` : ''}
+          {kilo(used)} tokens
+          {inUseModel !== null
+            ? ` · ${modelName(inUseModel.model)}${inUseModel.effort !== undefined ? ` (${inUseModel.effort})` : ''}`
+            : b !== null
+              ? ` · ${modelName(b.model)}`
+              : ''}
           {threshold !== null ? ` · auto-compacts at ${kilo(threshold)}` : ''}
         </Text>
       </Box>
@@ -716,6 +770,11 @@ export const register: Register = on => {
             }}
           />
           <Button
+            key="ctx-early"
+            label={early ? `Early compact at ${EARLY_COMPACT_AT}%: on` : `Early compact at ${EARLY_COMPACT_AT}%: off`}
+            onPress={() => toggleAutoCompact($).catch(() => {})}
+          />
+          <Button
             key="ctx-copy"
             label="Copy figures"
             onPress={() =>
@@ -744,6 +803,14 @@ export const register: Register = on => {
         <Button key="usage-refresh" label="Refresh" onPress={() => refreshUsage($).catch(() => {})} />
         <Button key="usage-sound" label={sound ? 'Sound: on' : 'Sound: off'} onPress={() => toggleSound($).catch(() => {})} />
         <Button key="usage-hide-bar" label="Hide the bar" onPress={() => toggleHidden($).catch(() => {})} />
+        <Button
+          key="usage-clear"
+          label="Clear chat"
+          onPress={() => {
+            $.ui.toast('Clearing the conversation…')
+            $.command.run({ command: 'clear' }).catch(err => $.ui.toast(`Clear failed: ${String(err)}`))
+          }}
+        />
       </Box>
     )
     if (ls.length === 0) {

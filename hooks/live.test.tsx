@@ -271,3 +271,54 @@ test('a finished answer rings done.wav; the usage panel toggles it off', async (
   expect(played).toEqual([])
   await pane.unmount()
 })
+
+test('early compaction compacts at 90% of the way to the threshold', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  let tokens = 100_000
+  let compacted = 0
+  on('session.usage', (_$, e) => ({
+    value: {
+      startedAt: 0,
+      context: {
+        tokens,
+        window: 1_000_000,
+        percent: Math.round((tokens / 1_000_000) * 100),
+        breakdown: (e as { breakdown?: string }).breakdown !== undefined
+          ? {
+              categories: [], totalTokens: tokens, maxTokens: 1_000_000, rawMaxTokens: 1_000_000,
+              autocompactSource: 'auto', percentage: 10, gridRows: [], model: 'claude-fable-5',
+              memoryFiles: [], mcpTools: [], agents: [],
+              isAutoCompactEnabled: true, autoCompactThreshold: 500_000,
+            }
+          : undefined,
+      },
+      rateLimits: [],
+    },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
+  on('session.compact', () => {
+    compacted += 1
+    return { messages: [{ role: 'user', text: 'summary', toolUses: [] }] } as never
+  })
+
+  const pane = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'context-bar-context',
+    props: { title: 'Context', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
+  })
+  await pane.press({ key: 'ctx-refresh' }) // pull the breakdown in, so the full panel draws
+  await pane.press({ key: 'ctx-early' }) // turn early compaction on
+
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1' } as never)
+  expect(compacted).toBe(0) // 100k of 500k: far from the line
+
+  tokens = 460_000 // 92% of the way to the 500k threshold
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't2' } as never)
+  expect(compacted).toBe(1)
+  await pane.unmount()
+})
