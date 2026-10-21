@@ -573,3 +573,133 @@ test('Compact now runs /compact, which works in a desktop session', async ($, on
   expect(ran).toEqual(['compact'])
   await pane.unmount()
 })
+
+function earlySetup(
+  on: Parameters<Parameters<typeof test>[1]>[1],
+  state: { tokens: number; compacted: number },
+  toasts: string[] = [],
+) {
+  on('session.usage', (_$, e) => ({
+    value: {
+      startedAt: 0,
+      context: {
+        tokens: state.tokens,
+        window: 1_000_000,
+        percent: Math.round((state.tokens / 1_000_000) * 100),
+        breakdown: (e as { breakdown?: string }).breakdown !== undefined
+          ? {
+              categories: [], totalTokens: state.tokens, maxTokens: 1_000_000, rawMaxTokens: 1_000_000,
+              autocompactSource: 'auto', percentage: 10, gridRows: [], model: 'claude-fable-5',
+              memoryFiles: [], mcpTools: [], agents: [],
+              isAutoCompactEnabled: true, autoCompactThreshold: 500_000,
+            }
+          : undefined,
+      },
+      rateLimits: [],
+    },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
+  on('turn.start', (_$, e) => ({ turnId: (e as { turnId?: string }).turnId ?? 't' }) as never)
+  on('ui.toast', (_$, e) => {
+    toasts.push(String((e as { text?: unknown }).text ?? ''))
+    return { value: undefined } as never
+  })
+  on('command.run', { command: 'compact' }, () => {
+    state.compacted += 1
+    state.tokens = 60_000
+    return { text: '' } as never
+  })
+}
+
+test('two turns ending inside the delay compact once', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const state = { tokens: 460_000, compacted: 0 }
+  earlySetup(on, state)
+  const pane = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'context-bar-context',
+    props: { title: 'Context', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
+  })
+  await pane.press({ key: 'ctx-refresh' })
+  await pane.press({ key: 'ctx-early' })
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1' } as never)
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't2' } as never)
+  await clock.advance(600)
+  await clock.advance(600)
+  expect(state.compacted).toBe(1)
+  await pane.unmount()
+})
+
+test('a turn begun during the delay puts early compaction off to its end', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  const state = { tokens: 460_000, compacted: 0 }
+  earlySetup(on, state)
+  const pane = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'context-bar-context',
+    props: { title: 'Context', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
+  })
+  await pane.press({ key: 'ctx-refresh' })
+  await pane.press({ key: 'ctx-early' })
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1' } as never)
+  await $.turn.start({ text: 'next', turnId: 't2' } as never)
+  await clock.advance(600)
+  expect(state.compacted).toBe(0) // /compact would have queued behind the new turn
+  expect((await pane.find({ key: 'ctx-early' }))?.props.label).toContain(': on')
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't2' } as never)
+  await clock.advance(600)
+  expect(state.compacted).toBe(1)
+  await pane.unmount()
+})
+
+test('Compact now while Claude works says it is queued', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  const state = { tokens: 460_000, compacted: 0 }
+  const toasts: string[] = []
+  earlySetup(on, state, toasts)
+  const pane = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'context-bar-context',
+    props: { title: 'Context', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
+  })
+  await pane.press({ key: 'ctx-refresh' })
+  await $.turn.start({ text: 'work', turnId: 't1' } as never)
+  await pane.press({ key: 'ctx-compact' })
+  expect(state.compacted).toBe(1)
+  expect(toasts.join('|')).toContain('queued')
+  expect(toasts.join('|')).not.toContain('Compacted')
+  await pane.unmount()
+})
+
+test('italic-label skins draw the band', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { tokens: 100_000, window: 200_000, percent: 50 }, rateLimits: [{ kind: 'five_hour', percentUsed: 30 }] },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  for (const skin of ['latte', 'sumi', 'cyberpunk']) {
+    await $.command.run({ command: 'contextbar', args: `theme ${skin}` } as never)
+    const band = await $.ui.mount({
+      plugin: 'context-bar',
+      surface: 'terminal',
+      component: 'AbovePrompt',
+      props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 200 } as never,
+    })
+    await $.tool.call({ tool: 'Read', file_path: '/x' } as never)
+    expect((await band.findAll({ type: 'Text' })).some(x => x.props.italic === true)).toBe(true)
+    await band.unmount()
+  }
+})

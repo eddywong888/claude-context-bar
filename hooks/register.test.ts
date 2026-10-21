@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, inksOf, isFable, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
+import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, inksOf, isFable, isTheme, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -243,4 +243,18 @@ test('skins dress the surface: backdrop, inks, border and face', () => {
     expect(ink.tray.backgroundColor).toBeDefined() // the app's buttons sit on a light tray
     expect(ink.tone('suggestion')).not.toBe('suggestion')
   }
+})
+
+test('theme names are THEMES own keys only', () => {
+  expect(isTheme('sumi')).toBe(true)
+  expect(isTheme('constructor')).toBe(false) // an inherited key is no skin
+  expect(isTheme('toString')).toBe(false)
+  expect(isTheme(42)).toBe(false)
+})
+
+test('the default skin leaves the panel layout alone; tones pass unknown colours through', () => {
+  expect(inksOf(THEMES['meadow']!).pane.flexGrow).toBeUndefined()
+  expect(inksOf(THEMES['hermes']!).pane.flexGrow).toBe(1)
+  expect(inksOf(THEMES['hermes']!).tone('permission')).toBe('permission')
+  expect(inksOf(THEMES['hermes']!).tone('claude')).toBe('#f7a96b')
 })

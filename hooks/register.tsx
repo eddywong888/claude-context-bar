@@ -234,7 +234,10 @@ export const THEMES: Record<string, Palette> = {
 
 export const THEME_NAMES = Object.keys(THEMES)
 
-const paletteOf = (name: string): Palette => THEMES[name] ?? THEMES['meadow']!
+/** A skin name THEMES holds itself, never an inherited key such as "constructor". */
+export const isTheme = (name: unknown): name is string => typeof name === 'string' && Object.hasOwn(THEMES, name)
+
+const paletteOf = (name: string): Palette => (isTheme(name) ? THEMES[name]! : THEMES['meadow']!)
 
 /** Text props for a skin's plain and faint text; without a surface, the app's own. */
 export const inksOf = (pal: Palette) => {
@@ -245,11 +248,11 @@ export const inksOf = (pal: Palette) => {
     /** The band's backdrop. */
     band: { backgroundColor: sf?.bg, paddingX: sf === undefined ? 0 : 1 },
     /** A status colour as this skin draws it. */
-    tone: (key: Tone) => sf?.tones?.[key] ?? key,
+    tone: (key: string) => sf?.tones?.[key as Tone] ?? key,
     /** Under the app's buttons: the skin's tray, if it has one. */
     tray: { backgroundColor: sf?.tray, paddingX: sf?.tray === undefined ? 0 : 1 },
     /** A panel's backdrop and border. */
-    pane: { backgroundColor: sf?.bg, borderStyle: sf?.border, borderColor: sf?.borderColor, flexGrow: 1 },
+    pane: { backgroundColor: sf?.bg, borderStyle: sf?.border, borderColor: sf?.borderColor, flexGrow: sf === undefined ? undefined : 1 },
   }
 }
 
@@ -603,6 +606,9 @@ async function syncAutoCompact($: EngineInterface) {
 /** True while early compaction runs, so the session.compact hook leaves the refresh to it. */
 let selfCompacting = false
 
+/** True from scheduling an early compaction until it settles, so overlapping turns schedule one at most. */
+let earlyPending = false
+
 /**
  * Compacts by running /compact as if typed. $.session.compact is not available
  * in a desktop (SDK) session, and the command queues until the session is idle.
@@ -611,12 +617,20 @@ async function runCompact($: EngineInterface) {
   await $.command.run({ command: 'compact', args: '' })
 }
 
-/** The panel and bar buttons: a toast now, another when it ends. */
-function compactNow($: EngineInterface) {
-  $.ui.toast('Compacting the conversation…')
-  runCompact($)
-    .then(() => $.ui.toast('Compacted'))
-    .catch(err => $.ui.toast(`Compact failed: ${String(err)}`))
+/**
+ * The panel and bar buttons. While Claude works, /compact waits for the turn
+ * to end and its promise can settle first, so then the toast says it is queued
+ * rather than claiming it is done; the session.compact hook refreshes the figures.
+ */
+async function compactNow($: EngineInterface) {
+  const busy = (await read($, turnStartedAt).catch(() => null)) !== null
+  $.ui.toast(busy ? 'Compact queued: it runs when Claude finishes this turn' : 'Compacting the conversation…')
+  try {
+    await runCompact($)
+    if (!busy) $.ui.toast('Compacted')
+  } catch (err) {
+    $.ui.toast(`Compact failed: ${String(err)}`)
+  }
 }
 
 /**
@@ -626,20 +640,40 @@ function compactNow($: EngineInterface) {
  * a failing or ineffective compaction cannot retry every turn; and only when
  * nobody flipped the stored setting while it ran, so a mid-run choice stands.
  */
-async function maybeCompactEarly($: EngineInterface) {
-  if (!(await read($, autoCompactOn))) return
+/** How far toward auto-compaction the context is, or null when unknown. */
+async function earlyPercent($: EngineInterface) {
   const [f, threshold] = await Promise.all([read($, fill), read($, compactAt)])
-  const pct = f === null ? null : compactPercent(f.tokens, threshold)
+  return { pct: f === null ? null : compactPercent(f.tokens, threshold), threshold }
+}
+
+async function maybeCompactEarly($: EngineInterface) {
+  if (earlyPending || !(await read($, autoCompactOn))) return
+  const { pct } = await earlyPercent($)
   if (pct === null || pct < EARLY_COMPACT_AT) return
+  earlyPending = true
   await update($, autoCompactOn, () => false)
-  $.ui.toast(`Context ${pct}% of the way to auto-compact: compacting now`)
   // A command cannot run inside the turn that is ending; start it a moment after.
   $.clock.after(500, () => {
-    compactEarly($, threshold).catch(() => {})
+    compactEarly($)
+      .catch(() => {})
+      .finally(() => {
+        earlyPending = false
+      })
   })
 }
 
-async function compactEarly($: EngineInterface, threshold: number | null) {
+async function compactEarly($: EngineInterface) {
+  // A turn begun during the delay would queue /compact behind it, and the check
+  // below would read the figures before it ran: leave it to that turn's end.
+  // Recheck the rest too: the figures may have dropped, the setting been switched off.
+  const { pct, threshold } = await earlyPercent($)
+  const busy = (await read($, turnStartedAt)) !== null
+  const wanted = (await $.store.get('autoCompactOn').catch(() => false)) === true
+  if (busy || !wanted || pct === null || pct < EARLY_COMPACT_AT) {
+    await syncAutoCompact($)
+    return
+  }
+  $.ui.toast(`Context ${pct}% of the way to auto-compact: compacting now`)
   let helped = false
   try {
     // Refresh here rather than in the session.compact hook, which a mod's own call may skip;
@@ -673,7 +707,7 @@ async function setTheme($: EngineInterface, name: string) {
 
 async function syncTheme($: EngineInterface) {
   const stored = await $.store.get('themeName')
-  await update($, themeName, () => (typeof stored === 'string' && stored in THEMES ? stored : 'meadow'))
+  await update($, themeName, () => (isTheme(stored) ? stored : 'meadow'))
 }
 
 async function toggleHidden($: EngineInterface) {
@@ -816,7 +850,7 @@ export const register: Register = on => {
     }
     if (want.startsWith('theme')) {
       const asked = want.slice('theme'.length).trim()
-      if (asked in THEMES) {
+      if (isTheme(asked)) {
         await setTheme($, asked)
         return { text: `Theme: ${asked}.` }
       }
@@ -955,6 +989,8 @@ export const register: Register = on => {
         {pal.deco(text)}
       </Text>
     )
+    // The app's buttons keep light-theme ink: on a dark skin they sit on its tray.
+    const trayed = (button: ReturnType<typeof Button>) => <Box {...ink.tray}>{button}</Box>
     const fiveLeft = five === undefined ? null : resetIn(five.resetsAt, t)
     const fable = ls.filter(l => isFable(l.kind))
 
@@ -978,15 +1014,9 @@ export const register: Register = on => {
         <Box key="five" gap={1} alignItems="center">
           {label('5h')}
           <Box>{cells(dotCells(five.percent, pal), 'd')}</Box>
-          <Box {...ink.tray}>
-            <Button
-              key="open-usage"
-              plain
-              dimColor={five.percent < 50}
-              label={`${five.percent}%`}
-              onPress={() => openUsage($)}
-            />
-          </Box>
+          {trayed(
+            <Button key="open-usage" plain dimColor={five.percent < 50} label={`${five.percent}%`} onPress={() => openUsage($)} />,
+          )}
           {five.percent >= 80 ? <Text color={ink.tone('error')}>⚠</Text> : null}
           {fiveLeft !== null ? (
             <Text color={ink.tone(countdownColor(five.percent))} bold>
@@ -1037,13 +1067,13 @@ export const register: Register = on => {
         <Box flexWrap="wrap" columnGap={2} alignItems="center" {...ink.band}>
           <Box gap={1} alignItems="center">
             {contextGauge('mini')}
-            <Box {...ink.tray}><Button key="open-context" plain label={`${Math.round(percent)}%`} onPress={() => openContext($)} /></Box>
+            {trayed(<Button key="open-context" plain label={`${Math.round(percent)}%`} onPress={() => openContext($)} />)}
           </Box>
           {fiveGroup}
           {gitGroup(true)}
           {workGroup}
           <Box flexGrow={1} />
-          <Box {...ink.tray}><Button key="show" label="Show" onPress={() => toggleHidden($)} /></Box>
+          {trayed(<Button key="show" label="Show" onPress={() => toggleHidden($)} />)}
         </Box>
       )
     }
@@ -1053,7 +1083,7 @@ export const register: Register = on => {
         <Box gap={1} alignItems="center">
           {label('Context')}
           {contextGauge('full')}
-          <Box {...ink.tray}><Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} /></Box>
+          {trayed(<Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} />)}
           {f !== null ? (
             <Text {...ink.faint}>
               ({kilo(f.tokens)}/{kilo(f.window)})
@@ -1091,11 +1121,9 @@ export const register: Register = on => {
         {workGroup}
         <Box flexGrow={1} />
         {toCompact !== null && toCompact >= 70 ? (
-          <Box {...ink.tray}>
-            <Button key="bar-compact" label="Compact" onPress={() => compactNow($)} />
-          </Box>
+          trayed(<Button key="bar-compact" label="Compact" onPress={() => compactNow($).catch(() => {})} />)
         ) : null}
-        <Box {...ink.tray}><Button key="hide" label="Hide" onPress={() => toggleHidden($)} /></Box>
+        {trayed(<Button key="hide" label="Hide" onPress={() => toggleHidden($)} />)}
       </Box>
     )
   })
@@ -1172,7 +1200,7 @@ export const register: Register = on => {
 
     const row = (r: { name: string; tokens: number; color: string }, faint: boolean, showShare: boolean) => (
       <Box key={`${r.name}-${faint}-${showShare}`} gap={1}>
-        <Text color={faint ? 'inactive' : r.color}>{faint ? '○' : '●'}</Text>
+        <Text color={faint ? 'inactive' : ink.tone(r.color)}>{faint ? '○' : '●'}</Text>
         <Box flexGrow={1}>
           <Text {...(faint ? ink.faint : ink.plain)}>{r.name}</Text>
         </Box>
@@ -1204,7 +1232,7 @@ export const register: Register = on => {
         {headline}
         <Box height={1} width="100%">
           {inUse.map(r => (
-            <Box key={`s-${r.name}`} width={`${Math.max(1, Math.round(share(r.tokens)))}%`} height={1} backgroundColor={r.color} />
+            <Box key={`s-${r.name}`} width={`${Math.max(1, Math.round(share(r.tokens)))}%`} height={1} backgroundColor={ink.tone(r.color)} />
           ))}
           <Box flexGrow={1} height={1} backgroundColor="inactive" />
         </Box>
@@ -1234,7 +1262,7 @@ export const register: Register = on => {
             key="ctx-compact"
             hotkey="c"
             label="Compact now"
-            onPress={() => compactNow($)}
+            onPress={() => compactNow($).catch(() => {})}
           />
           <Button
             key="ctx-early"
