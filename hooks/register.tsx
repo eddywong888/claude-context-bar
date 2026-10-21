@@ -620,14 +620,10 @@ async function compactEarly($: EngineInterface, threshold: number | null) {
   }
 }
 
-/** Steps to the next theme and remembers it across sessions. */
-async function cycleTheme($: EngineInterface) {
-  const next = await update($, themeName, was => {
-    const i = THEME_NAMES.indexOf(was)
-    return THEME_NAMES[(i + 1) % THEME_NAMES.length] ?? 'meadow'
-  })
-  await $.store.set('themeName', next).catch(() => {})
-  $.ui.toast(`Theme: ${next}`)
+/** Switches to a named theme and remembers it across sessions. */
+async function setTheme($: EngineInterface, name: string) {
+  await update($, themeName, () => name)
+  await $.store.set('themeName', name).catch(() => {})
 }
 
 async function syncTheme($: EngineInterface) {
@@ -776,8 +772,7 @@ export const register: Register = on => {
     if (want.startsWith('theme')) {
       const asked = want.slice('theme'.length).trim()
       if (asked in THEMES) {
-        await update($, themeName, () => asked)
-        await $.store.set('themeName', asked).catch(() => {})
+        await setTheme($, asked)
         return { text: `Theme: ${asked}.` }
       }
       if (asked === '') {
@@ -1224,11 +1219,37 @@ export const register: Register = on => {
       read($, fiveHist),
     ])
     const pal = paletteOf(themed)
+    // Every skin as a sample gauge in its own colours, the current one ticked.
+    const skins = (
+      <Box flexDirection="column" marginTop={1}>
+        <Text bold>Skin</Text>
+        <Box columnGap={3} flexWrap="wrap">
+          {THEME_NAMES.map(name => {
+            const sample = THEMES[name]!
+            return (
+              <Box key={`skin-${name}`} alignItems="center" gap={1}>
+                <Text>
+                  {miniCells(60, sample).map((c, i) => (
+                    <Text key={`sk-${name}-${i}`} color={c.color}>
+                      {c.ch}
+                    </Text>
+                  ))}
+                </Text>
+                <Button
+                  key={`usage-skin-${name}`}
+                  label={name === themed ? `✓ ${name}` : name}
+                  onPress={() => setTheme($, name).catch(() => {})}
+                />
+              </Box>
+            )
+          })}
+        </Box>
+      </Box>
+    )
     const controls = (
       <Box gap={2} marginTop={1} flexWrap="wrap">
         <Button key="usage-refresh" hotkey="r" label="Refresh" onPress={() => refreshUsage($).catch(() => {})} />
         <Button key="usage-sound" hotkey="s" label={sound ? 'Sound: on' : 'Sound: off'} onPress={() => toggleSound($).catch(() => {})} />
-        <Button key="usage-theme" hotkey="t" label={`Theme: ${themed}`} onPress={() => cycleTheme($).catch(() => {})} />
         <Button key="usage-hide-bar" label="Hide the bar" onPress={() => toggleHidden($).catch(() => {})} />
         <Button
           key="usage-clear"
@@ -1245,6 +1266,7 @@ export const register: Register = on => {
         <Box flexDirection="column" paddingX={1}>
           <Text dimColor>Your usage appears after Claude's next reply.</Text>
           {controls}
+          {skins}
         </Box>
       )
     }
@@ -1297,6 +1319,7 @@ export const register: Register = on => {
           </Box>
         ) : null}
         {controls}
+        {skins}
       </Box>
     )
   })

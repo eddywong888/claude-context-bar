@@ -386,7 +386,7 @@ test('the bar grows a Compact button once 70% of the way to auto-compact', async
   await ui.unmount()
 })
 
-test('the theme button cycles palettes and /contextbar theme sets one', async ($, on) => {
+test('the skin picker sets a palette and /contextbar theme sets one', async ($, on) => {
   mock.clock(on)
   mock.store(on)
   on('session.usage', () => ({
@@ -407,9 +407,11 @@ test('the theme button cycles palettes and /contextbar theme sets one', async ($
     requestId: 'context-bar-usage',
     props: { title: 'Usage', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
   })
-  expect((await pane.find({ key: 'usage-theme' }))?.props.label).toBe('Theme: meadow')
-  await pane.press({ key: 'usage-theme' })
-  expect((await pane.find({ key: 'usage-theme' }))?.props.label).toBe('Theme: ocean')
+  expect((await pane.find({ key: 'usage-skin-meadow' }))?.props.label).toBe('✓ meadow')
+  expect((await pane.findAll({ type: 'Button' })).filter(b => String(b.props.key ?? '').startsWith('usage-skin-')).length).toBe(10)
+  await pane.press({ key: 'usage-skin-ocean' })
+  expect((await pane.find({ key: 'usage-skin-ocean' }))?.props.label).toBe('✓ ocean')
+  expect((await pane.find({ key: 'usage-skin-meadow' }))?.props.label).toBe('meadow')
 
   const band = await $.ui.mount({
     plugin: 'context-bar',
