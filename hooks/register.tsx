@@ -769,7 +769,7 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [f, threshold, ls, start, t, tools, turnMs, active, hidden, repo, hist5, growth, cost, themed] = await Promise.all([
+    const [f, threshold, ls, start, t, tools, turnMs, active, hidden, repo, growth, themed] = await Promise.all([
       read($, fill),
       read($, compactAt),
       read($, limits),
@@ -780,9 +780,7 @@ export const register: Register = on => {
       read($, agents),
       read($, isHidden),
       read($, git),
-      read($, fiveHist),
       read($, lastGrowth),
-      read($, costUsd),
       read($, themeName),
     ])
     const act = tools[tools.length - 1] ?? null
@@ -801,7 +799,6 @@ export const register: Register = on => {
       </Text>
     )
     const fiveLeft = five === undefined ? null : resetIn(five.resetsAt, t)
-    const fiveForecast = five === undefined ? null : forecast(hist5, five.resetsAt, t)
     const fable = ls.filter(l => isFable(l.kind))
 
     // One cell per glyph, coloured; the gauges are strips of these.
@@ -829,11 +826,6 @@ export const register: Register = on => {
           {fiveLeft !== null ? (
             <Text color={countdownColor(five.percent)} bold>
               ↻ {fiveLeft}
-            </Text>
-          ) : null}
-          {fiveForecast !== null ? (
-            <Text color="error" bold>
-              ⚠ {fiveForecast}
             </Text>
           ) : null}
         </Box>
@@ -925,11 +917,10 @@ export const register: Register = on => {
           </Box>
         ))}
         {gitGroup(false)}
-        {turnMs !== null || elapsed !== null || cost !== null ? (
+        {turnMs !== null || elapsed !== null ? (
           <Box gap={1}>
             {turnMs !== null ? <Text dimColor>last {turnLength(turnMs)}</Text> : null}
             {elapsed !== null ? <Text dimColor>session {elapsed}</Text> : null}
-            {cost !== null && cost > 0 ? <Text dimColor>{usd(cost)}</Text> : null}
           </Box>
         ) : null}
         {workGroup}
@@ -954,7 +945,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: CONTEXT_PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [b, f, threshold, early, inUseModel, hist, nTurn, nTotal, byModel, themed] = await Promise.all([
+    const [b, f, threshold, early, inUseModel, hist, nTurn, nTotal, byModel, cost] = await Promise.all([
       read($, breakdown),
       read($, fill),
       read($, compactAt),
@@ -964,7 +955,7 @@ export const register: Register = on => {
       read($, toolsTurn),
       read($, toolsTotal),
       read($, stepsByModel),
-      read($, themeName),
+      read($, costUsd),
     ])
     const turns = turnsLeft(hist, threshold)
     const max = f?.window ?? b?.max ?? 0
@@ -990,6 +981,7 @@ export const register: Register = on => {
               : ''}
           {threshold !== null ? ` · auto-compacts at ${kilo(threshold)}` : ''}
           {turns !== null ? ` · ~${turns} turn${turns === 1 ? '' : 's'} to compact` : ''}
+          {cost !== null && cost > 0 ? ` · ${usd(cost)} this session` : ''}
         </Text>
       </Box>
     )
@@ -1102,7 +1094,13 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: USAGE_PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [ls, t, sound, themed] = await Promise.all([read($, limits), read($, now), read($, soundOn), read($, themeName)])
+    const [ls, t, sound, themed, hist5] = await Promise.all([
+      read($, limits),
+      read($, now),
+      read($, soundOn),
+      read($, themeName),
+      read($, fiveHist),
+    ])
     const pal = paletteOf(themed)
     const controls = (
       <Box gap={2} marginTop={1} flexWrap="wrap">
@@ -1132,6 +1130,7 @@ export const register: Register = on => {
       <Box flexDirection="column" paddingX={1} gap={1}>
         {ls.map(l => {
           const left = resetIn(l.resetsAt, t)
+          const warn = l.kind === 'five_hour' ? forecast(hist5, l.resetsAt, t) : null
           const pct = Math.min(100, Math.max(0, l.percent))
           return (
             <Box key={`u-${l.kind}`} flexDirection="column">
@@ -1147,6 +1146,11 @@ export const register: Register = on => {
                   {left !== null ? `resets in ${left}` : 'reset time not reported'}
                 </Text>
               </Box>
+              {warn !== null ? (
+                <Text color="error" bold>
+                  ⚠ At the recent pace, the {warn} — before the reset
+                </Text>
+              ) : null}
               <Box height={1} width="100%">
                 {pct > 0 ? <Box width={`${Math.max(1, Math.round(pct))}%`} height={1} backgroundColor={gradientAt(pct / 100, pal)} /> : null}
                 <Box flexGrow={1} height={1} backgroundColor="inactive" />
@@ -1154,10 +1158,16 @@ export const register: Register = on => {
             </Box>
           )
         })}
-        {ls.every(l => l.kind === 'five_hour') ? (
-          <Text dimColor>
-            Weekly limits, including Fable, appear here once Claude Code reports them.
-          </Text>
+        {ls.every(l => !isFable(l.kind)) ? (
+          <Box flexDirection="column">
+            <Text bold dimColor>
+              Fable (weekly)
+            </Text>
+            <Box height={1} width="100%">
+              <Box flexGrow={1} height={1} backgroundColor="inactive" />
+            </Box>
+            <Text dimColor>Not reported to mods; see Settings → Usage for the real figure.</Text>
+          </Box>
         ) : null}
         {controls}
       </Box>
