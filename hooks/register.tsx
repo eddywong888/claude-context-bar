@@ -235,6 +235,10 @@ export const turnLength = (ms: number) => {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
 }
 
+/** Splits "1d11h52m" into number and unit runs, so the units can be drawn bold. */
+export const unitRuns = (text: string) =>
+  (text.match(/\d+|\D+/g) ?? []).map(run => ({ run, unit: !/^\d/.test(run) }))
+
 /** The reset countdown: blue while usage is easy, warning colours as the limit nears. */
 export const countdownColor = (percent: number) =>
   percent >= 80 ? 'error' : percent >= 50 ? 'warning' : 'suggestion'
@@ -848,6 +852,16 @@ export const register: Register = on => {
     const five = ls.find(l => l.kind === 'five_hour')
     const pal = paletteOf(themed)
 
+    const withUnits = (text: string, prefix: string) =>
+      unitRuns(text).map((r, i) =>
+        r.unit ? (
+          <Text key={`${prefix}${i}`} bold>
+            {r.run}
+          </Text>
+        ) : (
+          r.run
+        ),
+      )
     const label = (text: string) => (
       <Text color={pal.labelInk} dimColor={pal.labelInk === undefined}>
         {pal.deco(text)}
@@ -980,8 +994,8 @@ export const register: Register = on => {
         {gitGroup(false)}
         {turnMs !== null || elapsed !== null ? (
           <Box gap={1}>
-            {turnMs !== null ? <Text dimColor>L:{turnLength(turnMs)}</Text> : null}
-            {elapsed !== null ? <Text dimColor>Age:{elapsed}</Text> : null}
+            {turnMs !== null ? <Text dimColor>L:{withUnits(turnLength(turnMs), 'l')}</Text> : null}
+            {elapsed !== null ? <Text dimColor>Age:{withUnits(elapsed, 'a')}</Text> : null}
           </Box>
         ) : null}
         {workGroup}
