@@ -23,6 +23,10 @@ const modelInUse = atom({ plugin: 'context-bar', key: 'modelInUse' } as const, n
 const fiveHist = atom({ plugin: 'context-bar', key: 'fiveHist' } as const, [])
 const tokHist = atom({ plugin: 'context-bar', key: 'tokHist' } as const, [])
 const lastGrowth = atom({ plugin: 'context-bar', key: 'lastGrowth' } as const, null)
+const costUsd = atom({ plugin: 'context-bar', key: 'costUsd' } as const, null)
+const toolsTurn = atom({ plugin: 'context-bar', key: 'toolsTurn' } as const, 0)
+const toolsTotal = atom({ plugin: 'context-bar', key: 'toolsTotal' } as const, 0)
+const stepsByModel = atom({ plugin: 'context-bar', key: 'stepsByModel' } as const, {})
 const soundOn = atom({ plugin: 'context-bar', key: 'soundOn' } as const, true)
 const tickOwner = atom({ plugin: 'context-bar', key: 'tickOwner' } as const, null)
 
@@ -206,6 +210,9 @@ export const maskSecrets = (text: string) =>
     .replace(/\b(?:sk|pk|ghp|gho|ghs|xox[abprs]|AKIA)[-_A-Za-z0-9]{8,}/g, '••••')
     .replace(/[A-Za-z0-9+/_-]{32,}={0,2}/g, '••••')
 
+/** $4.12, or $0.0042 for very small sums. */
+export const usd = (n: number) => (n >= 0.1 ? `$${n.toFixed(2)}` : n > 0 ? `$${n.toFixed(4)}` : '$0')
+
 export const detailOf = (input: Record<string, unknown>) => {
   for (const key of ['command', 'file_path', 'pattern', 'description', 'url', 'query', 'prompt']) {
     const v = input[key]
@@ -264,6 +271,7 @@ async function refreshUsage($: EngineInterface, opts: { checkWindow: boolean } =
     update($, limits, prev => (nextLimits.length > 0 ? nextLimits : prev)),
     update($, startedAt, () => usage.startedAt),
     update($, now, () => at),
+    update($, costUsd, () => usage.cost?.usd ?? null),
   ])
 
   const fiveNow = nextLimits.find(l => l.kind === 'five_hour')
@@ -483,7 +491,11 @@ export const register: Register = on => {
     const id = e.tool_use_id ?? `${e.tool}-${Math.random()}`
     if (isMain) {
       const entry: RunningTool = { id, tool: e.tool, detail: detailOf(e as Record<string, unknown>) }
-      await update($, running, list => [...list, entry]).catch(() => {})
+      await Promise.allSettled([
+        update($, running, list => [...list, entry]),
+        update($, toolsTurn, n => n + 1),
+        update($, toolsTotal, n => n + 1),
+      ])
     }
     try {
       return await next(e)
@@ -537,6 +549,7 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       const effort = typeof e.effort === 'number' ? String(e.effort) : e.effort
       await update($, modelInUse, () => ({ model: e.model, effort })).catch(() => {})
+      await update($, stepsByModel, by => ({ ...by, [e.model]: (by[e.model] ?? 0) + 1 })).catch(() => {})
     }
     return yield* next(e)
   })
@@ -545,6 +558,7 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       const at = await $.clock.now().catch(() => null)
       if (at !== null) await update($, turnStartedAt, () => at).catch(() => {})
+      await update($, toolsTurn, () => 0).catch(() => {})
     }
     return next(e)
   })
@@ -596,7 +610,7 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [f, threshold, ls, start, t, tools, turnMs, active, hidden, repo, hist5, growth] = await Promise.all([
+    const [f, threshold, ls, start, t, tools, turnMs, active, hidden, repo, hist5, growth, cost] = await Promise.all([
       read($, fill),
       read($, compactAt),
       read($, limits),
@@ -609,6 +623,7 @@ export const register: Register = on => {
       read($, git),
       read($, fiveHist),
       read($, lastGrowth),
+      read($, costUsd),
     ])
     const act = tools[tools.length - 1] ?? null
 
@@ -744,14 +759,28 @@ export const register: Register = on => {
           </Box>
         ))}
         {gitGroup(false)}
-        {turnMs !== null || elapsed !== null ? (
+        {turnMs !== null || elapsed !== null || cost !== null ? (
           <Box gap={1}>
             {turnMs !== null ? <Text dimColor>last {turnLength(turnMs)}</Text> : null}
             {elapsed !== null ? <Text dimColor>session {elapsed}</Text> : null}
+            {cost !== null && cost > 0 ? <Text dimColor>{usd(cost)}</Text> : null}
           </Box>
         ) : null}
         {workGroup}
         <Box flexGrow={1} />
+        {toCompact !== null && toCompact >= 70 ? (
+          <Button
+            key="bar-compact"
+            label="Compact"
+            onPress={() => {
+              $.ui.toast('Compacting the conversation…')
+              $.session
+                .compact()
+                .then(() => $.ui.toast('Compacted'))
+                .catch(err => $.ui.toast(`Compact failed: ${String(err)}`))
+            }}
+          />
+        ) : null}
         <Button key="hide" label="Hide" onPress={() => toggleHidden($)} />
       </Box>
     )
@@ -759,13 +788,16 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: CONTEXT_PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [b, f, threshold, early, inUseModel, hist] = await Promise.all([
+    const [b, f, threshold, early, inUseModel, hist, nTurn, nTotal, byModel] = await Promise.all([
       read($, breakdown),
       read($, fill),
       read($, compactAt),
       read($, autoCompactOn),
       read($, modelInUse),
       read($, tokHist),
+      read($, toolsTurn),
+      read($, toolsTotal),
+      read($, stepsByModel),
     ])
     const turns = turnsLeft(hist, threshold)
     const max = f?.window ?? b?.max ?? 0
@@ -850,13 +882,22 @@ export const register: Register = on => {
           ))}
           <Box flexGrow={1} height={1} backgroundColor="inactive" />
         </Box>
+        <Text dimColor>
+          Tools: {nTurn} this turn, {nTotal} this session
+          {Object.keys(byModel).length > 0
+            ? ` · steps: ${Object.entries(byModel)
+                .map(([m, n]) => `${modelName(m)} ${n}`)
+                .join(', ')}`
+            : ''}
+        </Text>
         {section('In use', inUse, false, true)}
         {section('Room left', spare, true, true)}
         {section('Loaded when needed', later, true, false)}
         <Box gap={2} marginTop={1} flexWrap="wrap">
-          <Button key="ctx-refresh" label="Refresh" onPress={() => refreshThreshold($).catch(() => {})} />
+          <Button key="ctx-refresh" hotkey="r" label="Refresh" onPress={() => refreshThreshold($).catch(() => {})} />
           <Button
             key="ctx-compact"
+            hotkey="c"
             label="Compact now"
             onPress={() => {
               $.ui.toast('Compacting the conversation…')
@@ -897,8 +938,8 @@ export const register: Register = on => {
     const [ls, t, sound] = await Promise.all([read($, limits), read($, now), read($, soundOn)])
     const controls = (
       <Box gap={2} marginTop={1} flexWrap="wrap">
-        <Button key="usage-refresh" label="Refresh" onPress={() => refreshUsage($).catch(() => {})} />
-        <Button key="usage-sound" label={sound ? 'Sound: on' : 'Sound: off'} onPress={() => toggleSound($).catch(() => {})} />
+        <Button key="usage-refresh" hotkey="r" label="Refresh" onPress={() => refreshUsage($).catch(() => {})} />
+        <Button key="usage-sound" hotkey="s" label={sound ? 'Sound: on' : 'Sound: off'} onPress={() => toggleSound($).catch(() => {})} />
         <Button key="usage-hide-bar" label="Hide the bar" onPress={() => toggleHidden($).catch(() => {})} />
         <Button
           key="usage-clear"

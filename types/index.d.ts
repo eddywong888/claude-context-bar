@@ -26,6 +26,10 @@ declare module 'claude-code' {
       fiveHist: UsageSample[]
       tokHist: number[]
       lastGrowth: number | null
+      costUsd: number | null
+      toolsTurn: number
+      toolsTotal: number
+      stepsByModel: Record<string, number>
       isHidden: boolean
       resetNoticed: string | null
       git: GitInfo | null

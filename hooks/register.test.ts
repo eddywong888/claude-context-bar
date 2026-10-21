@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, modelName, parseGitStatus, pctText, resetIn, miniCells, trackCells, turnLength, turnsLeft, WARN_AT } from './register'
+import { clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, modelName, parseGitStatus, pctText, resetIn, usd, miniCells, trackCells, turnLength, turnsLeft, WARN_AT } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -172,4 +172,10 @@ test('turns left to auto-compact from token history', () => {
   expect(turnsLeft([100_000, 100_000, 100_000], 200_000)).toBe(null)
   expect(turnsLeft([100_000, 120_000], 200_000)).toBe(null)
   expect(turnsLeft([100_000, 120_000, 140_000], null)).toBe(null)
+})
+
+test('cost renders sensibly at any size', () => {
+  expect(usd(4.117)).toBe('$4.12')
+  expect(usd(0.0042)).toBe('$0.0042')
+  expect(usd(0)).toBe('$0')
 })

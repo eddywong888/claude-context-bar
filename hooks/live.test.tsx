@@ -155,6 +155,7 @@ test('clicking the numbers opens the context and usage panels', async ($, on) =>
     expect(paneText).toContain('Messages')
     expect(paneText).toContain('auto-compacts at 967k')
     expect(paneText).toContain('Opus 5.5')
+    expect(paneText).toContain('Tools: ')
     await pane.unmount()
   }
   await ui.unmount()
