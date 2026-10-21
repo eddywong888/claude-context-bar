@@ -21,6 +21,7 @@ declare module 'claude-code' {
       turnStartedAt: number | null
       tickOwner: string | null
       soundOn: boolean
+      themeName: string
       autoCompactOn: boolean
       modelInUse: { model: string; effort?: string } | null
       fiveHist: UsageSample[]

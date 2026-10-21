@@ -27,6 +27,7 @@ const costUsd = atom({ plugin: 'context-bar', key: 'costUsd' } as const, null)
 const toolsTurn = atom({ plugin: 'context-bar', key: 'toolsTurn' } as const, 0)
 const toolsTotal = atom({ plugin: 'context-bar', key: 'toolsTotal' } as const, 0)
 const stepsByModel = atom({ plugin: 'context-bar', key: 'stepsByModel' } as const, {})
+const themeName = atom({ plugin: 'context-bar', key: 'themeName' } as const, 'meadow')
 const soundOn = atom({ plugin: 'context-bar', key: 'soundOn' } as const, true)
 const tickOwner = atom({ plugin: 'context-bar', key: 'tickOwner' } as const, null)
 
@@ -49,14 +50,56 @@ export const kilo = (n: number) =>
 
 export const pctText = (p: number) => (p < 10 ? p.toFixed(1) : String(Math.round(p * 10) / 10))
 
-const STOPS: [number, number, number][] = [
-  [0x11, 0x7a, 0x2e], // deep green
-  [0xb3, 0x6b, 0x00], // deep amber
-  [0xb3, 0x1d, 0x28], // deep red
-]
+export type Palette = {
+  stops: [number, number, number][]
+  track: string
+  trackDots: string
+  notch: string
+}
 
-/** The gauge colour at a position from 0 (green) through amber to 1 (red). */
-export const gradientAt = (t: number) => {
+export const THEMES: Record<string, Palette> = {
+  // Green to amber to red: the data-semantic default.
+  meadow: {
+    stops: [
+      [0x11, 0x7a, 0x2e],
+      [0xb3, 0x6b, 0x00],
+      [0xb3, 0x1d, 0x28],
+    ],
+    track: '#c9ced6',
+    trackDots: '#9aa1ab',
+    notch: '#8a5a1f',
+  },
+  // Teal to indigo to magenta: pressure as deepening water, no red at all.
+  ocean: {
+    stops: [
+      [0x0e, 0x74, 0x90],
+      [0x4f, 0x46, 0xe5],
+      [0xbe, 0x18, 0x5d],
+    ],
+    track: '#b6c2cf',
+    trackDots: '#8da0b3',
+    notch: '#1e3a5f',
+  },
+  // Old gold to burnt orange to crimson: warm from the first cell.
+  ember: {
+    stops: [
+      [0x9a, 0x7b, 0x0a],
+      [0xc2, 0x41, 0x0c],
+      [0x9f, 0x12, 0x39],
+    ],
+    track: '#cfc8bd',
+    trackDots: '#aaa08f',
+    notch: '#4a3728',
+  },
+}
+
+export const THEME_NAMES = Object.keys(THEMES)
+
+const paletteOf = (name: string): Palette => THEMES[name] ?? THEMES['meadow']!
+
+/** The gauge colour at a position from 0 (calm) to 1 (full), in the palette's ramp. */
+export const gradientAt = (t: number, pal: Palette = THEMES['meadow']!) => {
+  const STOPS = pal.stops
   const x = Math.min(1, Math.max(0, t)) * (STOPS.length - 1)
   const i = Math.min(STOPS.length - 2, Math.floor(x))
   const a = STOPS[i] ?? STOPS[0]!
@@ -67,8 +110,8 @@ export const gradientAt = (t: number) => {
 }
 
 /** One gradient cell per character of `text`, coloured by its place among `of` cells. */
-export const gradientCells = (text: string, start: number, of: number) =>
-  [...text].map((ch, i) => ({ ch, color: gradientAt(of <= 1 ? 0 : (start + i) / (of - 1)) }))
+export const gradientCells = (text: string, start: number, of: number, pal?: Palette) =>
+  [...text].map((ch, i) => ({ ch, color: gradientAt(of <= 1 ? 0 : (start + i) / (of - 1), pal) }))
 
 const MINI = 5
 
@@ -81,12 +124,6 @@ export const mini = (percent: number, lit: string, unlit: string) => {
 /** Where the early-warning line sits on the context bar, as a share of the window. */
 export const WARN_AT = 75
 
-/** Grey for the unlit part of every gauge, so the track reads as one strip. */
-const TRACK = '#c9ced6'
-/** The early-warning marker on the context gauge. */
-const NOTCH_WARN = '#8a5a1f'
-/** The stippled track the empty part of the context gauge is drawn in. */
-const TRACK_DOTS = '#9aa1ab'
 
 /**
  * The context gauge: lit cells in the gradient, the rest as a light stippled
@@ -94,28 +131,28 @@ const TRACK_DOTS = '#9aa1ab'
  * a line rather than taking a cell. The bar shows only the warning line;
  * the auto-compact point is reported in text.
  */
-export const trackCells = (percent: number, width: number, warnPercent: number | null) => {
+export const trackCells = (percent: number, width: number, warnPercent: number | null, pal: Palette = THEMES['meadow']!) => {
   const lit = Math.min(width, Math.max(0, Math.ceil(((percent - 1e-9) / 100) * width)))
   const warn = warnPercent === null ? -1 : Math.min(width, Math.max(0, Math.round((warnPercent / 100) * width)))
   const out: { ch: string; color: string; dim?: boolean }[] = []
   for (let i = 0; i <= width; i++) {
-    if (i === warn) out.push({ ch: '┃', color: NOTCH_WARN })
+    if (i === warn) out.push({ ch: '┃', color: pal.notch })
     if (i === width) break
-    out.push(i < lit ? { ch: '█', color: gradientAt(width <= 1 ? 0 : i / (width - 1)) } : { ch: '░', color: TRACK_DOTS, dim: true })
+    out.push(i < lit ? { ch: '█', color: gradientAt(width <= 1 ? 0 : i / (width - 1), pal) } : { ch: '░', color: pal.trackDots, dim: true })
   }
   return out
 }
 
 /** The hidden view's five-cell gauge: ▰ lit in the gradient, ▱ unlit. */
-export const miniCells = (percent: number) => {
+export const miniCells = (percent: number, pal: Palette = THEMES['meadow']!) => {
   const { on, off } = mini(percent, '▰', '▱')
-  return [...gradientCells(on, 0, MINI), ...[...off].map(ch => ({ ch, color: TRACK }))]
+  return [...gradientCells(on, 0, MINI, pal), ...[...off].map(ch => ({ ch, color: pal.track }))]
 }
 
 /** Five dots for the 5h window: lit ones in the gradient, the rest as rings. */
-export const dotCells = (percent: number) => {
+export const dotCells = (percent: number, pal: Palette = THEMES['meadow']!) => {
   const { on, off } = mini(percent, '●', '○')
-  return [...gradientCells(on, 0, MINI), ...[...off].map(ch => ({ ch, color: TRACK }))]
+  return [...gradientCells(on, 0, MINI, pal), ...[...off].map(ch => ({ ch, color: pal.track }))]
 }
 
 export const isFable = (kind: string) => /fable/i.test(kind)
@@ -421,6 +458,21 @@ async function maybeCompactEarly($: EngineInterface) {
   }
 }
 
+/** Steps to the next theme and remembers it across sessions. */
+async function cycleTheme($: EngineInterface) {
+  const next = await update($, themeName, was => {
+    const i = THEME_NAMES.indexOf(was)
+    return THEME_NAMES[(i + 1) % THEME_NAMES.length] ?? 'meadow'
+  })
+  await $.store.set('themeName', next).catch(() => {})
+  $.ui.toast(`Theme: ${next}`)
+}
+
+async function syncTheme($: EngineInterface) {
+  const stored = await $.store.get('themeName')
+  await update($, themeName, () => (typeof stored === 'string' && stored in THEMES ? stored : 'meadow'))
+}
+
 async function toggleHidden($: EngineInterface) {
   const next = await update($, isHidden, was => !was)
   await $.store.set('isHidden', next).catch(() => {})
@@ -500,6 +552,7 @@ export const register: Register = on => {
       syncHidden($).catch(() => {}),
       syncSound($).catch(() => {}),
       syncAutoCompact($).catch(() => {}),
+      syncTheme($).catch(() => {}),
     ])
     return result
   })
@@ -556,12 +609,25 @@ export const register: Register = on => {
       await $.store.set('autoCompactOn', enabled).catch(() => {})
       return { text: enabled ? `Will compact at ${EARLY_COMPACT_AT}% of the way to auto-compact.` : 'Early compaction off.' }
     }
+    if (want.startsWith('theme')) {
+      const asked = want.slice('theme'.length).trim()
+      if (asked in THEMES) {
+        await update($, themeName, () => asked)
+        await $.store.set('themeName', asked).catch(() => {})
+        return { text: `Theme: ${asked}.` }
+      }
+      if (asked === '') {
+        const current = await read($, themeName)
+        return { text: `Theme: ${current}. Themes: ${THEME_NAMES.join(', ')}.` }
+      }
+      return { text: `No theme called “${asked}”. Themes: ${THEME_NAMES.join(', ')}.` }
+    }
     const [hidden, sound, early] = await Promise.all([read($, isHidden), read($, soundOn), read($, autoCompactOn)])
     return {
       text: [
         ...(want !== '' ? [`Didn't understand “${want}”.`] : []),
         `Context bar: ${hidden ? 'collapsed' : 'expanded'} · sound ${sound ? 'on' : 'off'} · early compact ${early ? 'on' : 'off'}`,
-        'Usage: /contextbar show | hide | sound on | sound off | early on | early off',
+        'Usage: /contextbar show | hide | sound on | sound off | early on | early off | theme <name>',
       ].join('\n'),
     }
   })
@@ -609,6 +675,7 @@ export const register: Register = on => {
         refreshAgents($),
         syncHidden($),
         syncSound($),
+        syncTheme($),
       ])
       if (e.reason === 'answer') ringDone($).catch(() => {})
       const f2 = await read($, fill).catch(() => null)
@@ -629,7 +696,7 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [f, threshold, ls, start, t, tools, turnMs, active, hidden, repo, hist5, growth, cost] = await Promise.all([
+    const [f, threshold, ls, start, t, tools, turnMs, active, hidden, repo, hist5, growth, cost, themed] = await Promise.all([
       read($, fill),
       read($, compactAt),
       read($, limits),
@@ -643,6 +710,7 @@ export const register: Register = on => {
       read($, fiveHist),
       read($, lastGrowth),
       read($, costUsd),
+      read($, themeName),
     ])
     const act = tools[tools.length - 1] ?? null
 
@@ -652,6 +720,7 @@ export const register: Register = on => {
 
     const showWork = e.props.isWorking || active.length > 0
     const five = ls.find(l => l.kind === 'five_hour')
+    const pal = paletteOf(themed)
 
     const fiveLeft = five === undefined ? null : resetIn(five.resetsAt, t)
     const fiveForecast = five === undefined ? null : forecast(hist5, five.resetsAt, t)
@@ -667,16 +736,16 @@ export const register: Register = on => {
 
     const contextGauge = (width: 'full' | 'mini') =>
       width === 'mini' ? (
-        <Box>{cells(miniCells(percent), 'm')}</Box>
+        <Box>{cells(miniCells(percent, pal), 'm')}</Box>
       ) : (
-        <Box>{cells(trackCells(percent, WIDTH, WARN_AT), 'c')}</Box>
+        <Box>{cells(trackCells(percent, WIDTH, WARN_AT, pal), 'c')}</Box>
       )
 
     const fiveGroup =
       five === undefined ? null : (
         <Box key="five" gap={1} alignItems="center">
           <Text dimColor>5h</Text>
-          <Box>{cells(dotCells(five.percent), 'd')}</Box>
+          <Box>{cells(dotCells(five.percent, pal), 'd')}</Box>
           <Button key="open-usage" plain dimColor={five.percent < 50} label={`${five.percent}%`} onPress={() => openUsage($)} />
           {five.percent >= 80 ? <Text color="error">⚠</Text> : null}
           {fiveLeft !== null ? (
@@ -771,7 +840,7 @@ export const register: Register = on => {
         {fable.map(l => (
           <Box key={l.kind} gap={1} alignItems="center">
             <Text dimColor>Fable</Text>
-            <Box>{cells(trackCells(l.percent, SMOOTH, null), `f${l.kind}`)}</Box>
+            <Box>{cells(trackCells(l.percent, SMOOTH, null, pal), `f${l.kind}`)}</Box>
             <Text dimColor={l.percent < 50} color={l.percent >= 80 ? 'error' : undefined}>
               {l.percent}%
             </Text>
@@ -807,7 +876,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: CONTEXT_PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [b, f, threshold, early, inUseModel, hist, nTurn, nTotal, byModel] = await Promise.all([
+    const [b, f, threshold, early, inUseModel, hist, nTurn, nTotal, byModel, themed] = await Promise.all([
       read($, breakdown),
       read($, fill),
       read($, compactAt),
@@ -817,6 +886,7 @@ export const register: Register = on => {
       read($, toolsTurn),
       read($, toolsTotal),
       read($, stepsByModel),
+      read($, themeName),
     ])
     const turns = turnsLeft(hist, threshold)
     const max = f?.window ?? b?.max ?? 0
@@ -954,11 +1024,13 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: USAGE_PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [ls, t, sound] = await Promise.all([read($, limits), read($, now), read($, soundOn)])
+    const [ls, t, sound, themed] = await Promise.all([read($, limits), read($, now), read($, soundOn), read($, themeName)])
+    const pal = paletteOf(themed)
     const controls = (
       <Box gap={2} marginTop={1} flexWrap="wrap">
         <Button key="usage-refresh" hotkey="r" label="Refresh" onPress={() => refreshUsage($).catch(() => {})} />
         <Button key="usage-sound" hotkey="s" label={sound ? 'Sound: on' : 'Sound: off'} onPress={() => toggleSound($).catch(() => {})} />
+        <Button key="usage-theme" hotkey="t" label={`Theme: ${themed}`} onPress={() => cycleTheme($).catch(() => {})} />
         <Button key="usage-hide-bar" label="Hide the bar" onPress={() => toggleHidden($).catch(() => {})} />
         <Button
           key="usage-clear"
@@ -988,7 +1060,7 @@ export const register: Register = on => {
               <Text bold>{limitName(l.kind)}</Text>
               <Box justifyContent="space-between" alignItems="flex-end">
                 <Box alignItems="flex-end" gap={1}>
-                  <Text bold color={gradientAt(pct / 100)}>
+                  <Text bold color={gradientAt(pct / 100, pal)}>
                     {l.percent}%
                   </Text>
                   <Text dimColor>used</Text>
@@ -998,7 +1070,7 @@ export const register: Register = on => {
                 </Text>
               </Box>
               <Box height={1} width="100%">
-                {pct > 0 ? <Box width={`${Math.max(1, Math.round(pct))}%`} height={1} backgroundColor={gradientAt(pct / 100)} /> : null}
+                {pct > 0 ? <Box width={`${Math.max(1, Math.round(pct))}%`} height={1} backgroundColor={gradientAt(pct / 100, pal)} /> : null}
                 <Box flexGrow={1} height={1} backgroundColor="inactive" />
               </Box>
             </Box>

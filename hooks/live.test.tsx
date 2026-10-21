@@ -381,3 +381,46 @@ test('the bar grows a Compact button once 70% of the way to auto-compact', async
   expect(await ui.find({ key: 'bar-compact' })).toBeDefined()
   await ui.unmount()
 })
+
+test('the theme button cycles palettes and /contextbar theme sets one', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  on('session.usage', () => ({
+    value: {
+      startedAt: 0,
+      context: { tokens: 100_000, window: 200_000, percent: 50 },
+      rateLimits: [{ kind: 'five_hour', percentUsed: 30 }],
+    },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+
+  const pane = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'context-bar-usage',
+    props: { title: 'Usage', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
+  })
+  expect((await pane.find({ key: 'usage-theme' }))?.props.label).toBe('Theme: meadow')
+  await pane.press({ key: 'usage-theme' })
+  expect((await pane.find({ key: 'usage-theme' }))?.props.label).toBe('Theme: ocean')
+
+  const band = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 200 } as never,
+  })
+  await $.tool.call({ tool: 'Read', file_path: '/x' } as never)
+  const fills = (await band.findAll({ type: 'Text' })).map(x => x.props.color)
+  expect(fills).toContain('#0e7490') // the band draws in ocean now
+
+  const set = await $.command.run({ command: 'contextbar', args: 'theme ember' } as never)
+  expect(set.text).toBe('Theme: ember.')
+  const bad = await $.command.run({ command: 'contextbar', args: 'theme neon' } as never)
+  expect(bad.text).toContain('No theme called')
+  await band.unmount()
+  await pane.unmount()
+})

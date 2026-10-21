@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, modelName, parseGitStatus, pctText, resetIn, usd, miniCells, trackCells, turnLength, turnsLeft, WARN_AT } from './register'
+import { clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, modelName, parseGitStatus, pctText, resetIn, THEMES, THEME_NAMES, usd, miniCells, trackCells, turnLength, turnsLeft, WARN_AT } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -189,4 +189,13 @@ test('forecast minutes never go negative with stale samples', () => {
   ]
   // Read 30 minutes later with no fresh samples: clamped to ~1m, never negative.
   expect(forecast(rising, '2026-10-21T12:00:00Z', m(40))).toBe('limit in ~1m')
+})
+
+test('themes: three palettes, distinct from the first cell, default untouched', () => {
+  expect(THEME_NAMES).toEqual(['meadow', 'ocean', 'ember'])
+  expect(gradientAt(0)).toBe('#117a2e') // default stays meadow
+  expect(gradientAt(0, THEMES['ocean'])).toBe('#0e7490')
+  expect(gradientAt(1, THEMES['ocean'])).toBe('#be185d')
+  expect(gradientAt(0, THEMES['ember'])).toBe('#9a7b0a')
+  expect(trackCells(50, 12, WARN_AT, THEMES['ocean']).find(c => c.ch === '┃')?.color).toBe('#1e3a5f')
 })
