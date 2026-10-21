@@ -61,6 +61,19 @@ export type Palette = {
   deco: (label: string) => string
   /** Ink for those labels; absent, the surface's dim text. */
   labelInk?: string
+  /** The skin's surface for the band and panels; absent, the app's own look. */
+  surface?: Surface
+}
+
+/** Background, text inks and panel border that dress the band and panels (mods cannot change the font). */
+export type Surface = {
+  bg: string
+  ink: string
+  faint: string
+  border: 'single' | 'double' | 'round' | 'bold' | 'dashed' | 'classic'
+  borderColor: string
+  /** Labels in italic. */
+  italic?: boolean
 }
 
 const PLAIN_GLYPHS = { fill: '█', empty: '░', dotOn: '●', dotOff: '○', miniOn: '▰', miniOff: '▱', marker: '┃' }
@@ -91,6 +104,7 @@ export const THEMES: Record<string, Palette> = {
     notch: '#1e3a5f',
     glyphs: PLAIN_GLYPHS,
     deco: label => label,
+    surface: { bg: '#e8f3f7', ink: '#0b3a4a', faint: '#5b7c8a', border: 'round', borderColor: '#9cc3d3' },
   },
   // Old gold to burnt orange to crimson: warm from the first cell.
   ember: {
@@ -104,6 +118,7 @@ export const THEMES: Record<string, Palette> = {
     notch: '#4a3728',
     glyphs: PLAIN_GLYPHS,
     deco: label => label,
+    surface: { bg: '#fbefe3', ink: '#3d2416', faint: '#8a6a55', border: 'round', borderColor: '#e0b48f' },
   },
   // Green phosphor terminal: one hue, brightening as it fills, prompt-style labels.
   hermes: {
@@ -118,6 +133,7 @@ export const THEMES: Record<string, Palette> = {
     glyphs: { fill: '█', empty: '·', dotOn: '●', dotOff: '·', miniOn: '█', miniOff: '·', marker: '│' },
     deco: label => `>${label.toLowerCase()}`,
     labelInk: '#2fb45a',
+    surface: { bg: '#0c1a10', ink: '#9be564', faint: '#4f8a5a', border: 'single', borderColor: '#2fb45a' },
   },
   // One ink, no colour: shade carries the reading.
   mono: {
@@ -131,6 +147,7 @@ export const THEMES: Record<string, Palette> = {
     notch: '#202124',
     glyphs: { fill: '▓', empty: '░', dotOn: '◉', dotOff: '○', miniOn: '◼', miniOff: '◻', marker: '│' },
     deco: label => label,
+    surface: { bg: '#f2f2f3', ink: '#202124', faint: '#6b6f75', border: 'single', borderColor: '#9aa0a6' },
   },
   // Amber CRT: bracketed capitals and phosphor orange.
   retro: {
@@ -145,6 +162,7 @@ export const THEMES: Record<string, Palette> = {
     glyphs: { fill: '█', empty: '.', dotOn: '■', dotOff: '.', miniOn: '█', miniOff: '.', marker: '|' },
     deco: label => `[${label.toUpperCase()}]`,
     labelInk: '#b36b00',
+    surface: { bg: '#1c1306', ink: '#ffb000', faint: '#9a7434', border: 'double', borderColor: '#b36b00' },
   },
   // Neon on dark glass: cyan into violet into magenta.
   cyberpunk: {
@@ -159,6 +177,7 @@ export const THEMES: Record<string, Palette> = {
     glyphs: { fill: '█', empty: '▒', dotOn: '◉', dotOff: '◌', miniOn: '▰', miniOff: '▱', marker: '┊' },
     deco: label => `▸${label}`,
     labelInk: '#00c2d1',
+    surface: { bg: '#140c24', ink: '#ece6ff', faint: '#8b7cb8', border: 'bold', borderColor: '#f72585', italic: true },
   },
   // A cup filling: short blocks rise to tall ones, milky caramel darkening to espresso.
   latte: {
@@ -173,6 +192,7 @@ export const THEMES: Record<string, Palette> = {
     glyphs: { fill: '▆', empty: '▁', dotOn: '●', dotOff: '○', miniOn: '▆', miniOff: '▁', marker: '│' },
     deco: label => label,
     labelInk: '#8b5a2b',
+    surface: { bg: '#f6ede1', ink: '#3b2416', faint: '#8b7058', border: 'round', borderColor: '#c4ab8c', italic: true },
   },
   // A drafting sheet: solid cells on a dashed dimension line, labels set between ticks.
   blueprint: {
@@ -187,6 +207,7 @@ export const THEMES: Record<string, Palette> = {
     glyphs: { fill: '▮', empty: '┄', dotOn: '◆', dotOff: '◇', miniOn: '▮', miniOff: '▯', marker: '╎' },
     deco: label => `┤${label}├`,
     labelInk: '#1d4ed8',
+    surface: { bg: '#eaf2fb', ink: '#0b2a5b', faint: '#6a86ab', border: 'dashed', borderColor: '#7fa3c8' },
   },
   // A brush stroke: a heavy line over a hairline, slate wash into ink, sealed in vermilion when full.
   sumi: {
@@ -201,12 +222,26 @@ export const THEMES: Record<string, Palette> = {
     glyphs: { fill: '━', empty: '─', dotOn: '●', dotOff: '◦', miniOn: '━', miniOff: '─', marker: '┃' },
     deco: label => label.toLowerCase(),
     labelInk: '#2b3445',
+    surface: { bg: '#f5f3ee', ink: '#1f2430', faint: '#7c8a9e', border: 'single', borderColor: '#c0392b', italic: true },
   },
 }
 
 export const THEME_NAMES = Object.keys(THEMES)
 
 const paletteOf = (name: string): Palette => THEMES[name] ?? THEMES['meadow']!
+
+/** Text props for a skin's plain and faint text; without a surface, the app's own. */
+export const inksOf = (pal: Palette) => {
+  const sf = pal.surface
+  return {
+    plain: { color: sf?.ink },
+    faint: sf === undefined ? { dimColor: true } : { color: sf.faint },
+    /** The band's backdrop. */
+    band: { backgroundColor: sf?.bg, paddingX: sf === undefined ? 0 : 1 },
+    /** A panel's backdrop and border. */
+    pane: { backgroundColor: sf?.bg, borderStyle: sf?.border, borderColor: sf?.borderColor, flexGrow: 1 },
+  }
+}
 
 /** The gauge colour at a position from 0 (calm) to 1 (full), in the palette's ramp. */
 export const gradientAt = (t: number, pal: Palette = THEMES['meadow']!) => {
@@ -888,11 +923,12 @@ export const register: Register = on => {
     const showWork = e.props.isWorking || active.length > 0
     const five = ls.find(l => l.kind === 'five_hour')
     const pal = paletteOf(themed)
+    const ink = inksOf(pal)
 
     const withUnits = (text: string, prefix: string) =>
       unitRuns(text).map((r, i) =>
         r.unit ? (
-          <Text key={`${prefix}${i}`} bold>
+          <Text key={`${prefix}${i}`} bold {...ink.plain}>
             {r.run}
           </Text>
         ) : (
@@ -900,7 +936,12 @@ export const register: Register = on => {
         ),
       )
     const label = (text: string) => (
-      <Text color={pal.labelInk} dimColor={pal.labelInk === undefined}>
+      <Text
+        color={pal.labelInk ?? pal.surface?.faint}
+        dimColor={pal.labelInk === undefined && pal.surface === undefined}
+        italic={pal.surface?.italic}
+       
+      >
         {pal.deco(text)}
       </Text>
     )
@@ -955,8 +996,8 @@ export const register: Register = on => {
               ✎{repo.changed}
             </Text>
           ) : null}
-          {!compact && repo.ahead > 0 ? <Text dimColor>↑{repo.ahead}</Text> : null}
-          {!compact && repo.behind > 0 ? <Text dimColor>↓{repo.behind}</Text> : null}
+          {!compact && repo.ahead > 0 ? <Text {...ink.faint}>↑{repo.ahead}</Text> : null}
+          {!compact && repo.behind > 0 ? <Text {...ink.faint}>↓{repo.behind}</Text> : null}
         </Box>
       )
 
@@ -967,7 +1008,7 @@ export const register: Register = on => {
             <Text color="claude" bold>
               ▶ {act === null ? 'thinking…' : act.tool}
             </Text>
-            {act?.detail !== undefined ? <Text dimColor>{act.detail}</Text> : null}
+            {act?.detail !== undefined ? <Text {...ink.faint}>{act.detail}</Text> : null}
           </Box>
         ) : null}
         {active.length > 0 ? (
@@ -981,7 +1022,7 @@ export const register: Register = on => {
 
     if (hidden) {
       return (
-        <Box flexWrap="wrap" columnGap={2} alignItems="center">
+        <Box flexWrap="wrap" columnGap={2} alignItems="center" {...ink.band}>
           <Box gap={1} alignItems="center">
             {contextGauge('mini')}
             <Button key="open-context" plain label={`${Math.round(percent)}%`} onPress={() => openContext($)} />
@@ -996,17 +1037,17 @@ export const register: Register = on => {
     }
 
     return (
-      <Box flexWrap="wrap" columnGap={2} alignItems="center">
+      <Box flexWrap="wrap" columnGap={2} alignItems="center" {...ink.band}>
         <Box gap={1} alignItems="center">
           {label('Context')}
           {contextGauge('full')}
           <Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} />
           {f !== null ? (
-            <Text dimColor>
+            <Text {...ink.faint}>
               ({kilo(f.tokens)}/{kilo(f.window)})
             </Text>
           ) : null}
-          {growth !== null && growth > 0 ? <Text dimColor>+{kilo(growth)}</Text> : null}
+          {growth !== null && growth > 0 ? <Text {...ink.faint}>+{kilo(growth)}</Text> : null}
         </Box>
         {toCompact !== null && toCompact >= COMPACT_WARN ? (
           <Text color="warning" bold>
@@ -1023,7 +1064,7 @@ export const register: Register = on => {
           <Box key={l.kind} gap={1} alignItems="center">
             {label('Fable')}
             <Box>{cells(trackCells(l.percent, SMOOTH, null, pal), `f${l.kind}`)}</Box>
-            <Text dimColor={l.percent < 50} color={l.percent >= 80 ? 'error' : undefined}>
+            <Text {...(l.percent >= 80 ? { color: 'error' } : l.percent < 50 ? ink.faint : ink.plain)}>
               {l.percent}%
             </Text>
           </Box>
@@ -1031,8 +1072,8 @@ export const register: Register = on => {
         {gitGroup(false)}
         {turnMs !== null || elapsed !== null ? (
           <Box gap={1}>
-            {turnMs !== null ? <Text dimColor>L:{withUnits(turnLength(turnMs), 'l')}</Text> : null}
-            {elapsed !== null ? <Text dimColor>Age:{withUnits(elapsed, 'a')}</Text> : null}
+            {turnMs !== null ? <Text {...ink.faint}>L:{withUnits(turnLength(turnMs), 'l')}</Text> : null}
+            {elapsed !== null ? <Text {...ink.faint}>Age:{withUnits(elapsed, 'a')}</Text> : null}
           </Box>
         ) : null}
         {workGroup}
@@ -1051,7 +1092,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: CONTEXT_PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [b, f, threshold, early, inUseModel, hist, nTurn, nTotal, byModel, cost] = await Promise.all([
+    const [b, f, threshold, early, inUseModel, hist, nTurn, nTotal, byModel, cost, themed] = await Promise.all([
       read($, breakdown),
       read($, fill),
       read($, compactAt),
@@ -1062,7 +1103,9 @@ export const register: Register = on => {
       read($, toolsTotal),
       read($, stepsByModel),
       read($, costUsd),
+      read($, themeName),
     ])
+    const ink = inksOf(paletteOf(themed))
     const turns = turnsLeft(hist, threshold)
     const max = f?.window ?? b?.max ?? 0
     const used = f?.tokens ?? b?.total ?? 0
@@ -1071,14 +1114,14 @@ export const register: Register = on => {
     const headline = (
       <Box flexDirection="column" marginBottom={1}>
         <Box alignItems="flex-end" gap={1}>
-          <Text bold>
+          <Text bold {...ink.plain}>
             {pctText(share(used))}%
           </Text>
-          <Text dimColor>
+          <Text {...ink.faint}>
             of {kilo(max)} used
           </Text>
         </Box>
-        <Text dimColor>
+        <Text {...ink.faint}>
           {kilo(used)} tokens
           {inUseModel !== null
             ? ` · ${modelName(inUseModel.model)}${inUseModel.effort !== undefined ? ` (${inUseModel.effort})` : ''}`
@@ -1094,9 +1137,9 @@ export const register: Register = on => {
 
     if (b === null) {
       return (
-        <Box flexDirection="column" paddingX={1}>
+        <Box flexDirection="column" paddingX={1} {...ink.pane}>
           {headline}
-          <Text dimColor>The breakdown appears after Claude's next reply.</Text>
+          <Text {...ink.faint}>The breakdown appears after Claude's next reply.</Text>
           <Box gap={2} marginTop={1}>
             <Button
               key="ctx-refresh"
@@ -1121,15 +1164,15 @@ export const register: Register = on => {
       <Box key={`${r.name}-${faint}-${showShare}`} gap={1}>
         <Text color={faint ? 'inactive' : r.color}>{faint ? '○' : '●'}</Text>
         <Box flexGrow={1}>
-          <Text dimColor={faint}>{r.name}</Text>
+          <Text {...(faint ? ink.faint : ink.plain)}>{r.name}</Text>
         </Box>
         <Box width={7} justifyContent="flex-end">
-          <Text dimColor>
+          <Text {...ink.faint}>
             {kilo(r.tokens)}
           </Text>
         </Box>
         <Box width={7} justifyContent="flex-end">
-          <Text dimColor={faint}>
+          <Text {...(faint ? ink.faint : ink.plain)}>
             {showShare ? `${pctText(share(r.tokens))}%` : ''}
           </Text>
         </Box>
@@ -1139,7 +1182,7 @@ export const register: Register = on => {
     const section = (title: string, rows: typeof inUse, faint: boolean, showShare: boolean) =>
       rows.length === 0 ? null : (
         <Box key={title} flexDirection="column" marginTop={1}>
-          <Text bold dimColor>
+          <Text bold {...ink.faint}>
             {title}
           </Text>
           {rows.map(r => row(r, faint, showShare))}
@@ -1147,7 +1190,7 @@ export const register: Register = on => {
       )
 
     return (
-      <Box flexDirection="column" paddingX={1}>
+      <Box flexDirection="column" paddingX={1} {...ink.pane}>
         {headline}
         <Box height={1} width="100%">
           {inUse.map(r => (
@@ -1155,7 +1198,7 @@ export const register: Register = on => {
           ))}
           <Box flexGrow={1} height={1} backgroundColor="inactive" />
         </Box>
-        <Text dimColor>
+        <Text {...ink.faint}>
           Tools: {nTurn} this turn (main), {nTotal} this session incl. subagents
           {Object.keys(byModel).length > 0
             ? ` · steps: ${Object.entries(byModel)
@@ -1219,22 +1262,25 @@ export const register: Register = on => {
       read($, fiveHist),
     ])
     const pal = paletteOf(themed)
-    // Every skin as a sample gauge in its own colours, the current one ticked.
+    const ink = inksOf(pal)
+    // Every skin as a sample gauge on its own backdrop, the current one ticked.
     const skins = (
       <Box flexDirection="column" marginTop={1}>
-        <Text bold>Skin</Text>
+        <Text bold {...ink.plain}>Skin</Text>
         <Box columnGap={3} flexWrap="wrap">
           {THEME_NAMES.map(name => {
             const sample = THEMES[name]!
             return (
               <Box key={`skin-${name}`} alignItems="center" gap={1}>
-                <Text>
-                  {miniCells(60, sample).map((c, i) => (
-                    <Text key={`sk-${name}-${i}`} color={c.color}>
-                      {c.ch}
-                    </Text>
-                  ))}
-                </Text>
+                <Box backgroundColor={sample.surface?.bg} paddingX={1}>
+                  <Text>
+                    {miniCells(60, sample).map((c, i) => (
+                      <Text key={`sk-${name}-${i}`} color={c.color}>
+                        {c.ch}
+                      </Text>
+                    ))}
+                  </Text>
+                </Box>
                 <Button
                   key={`usage-skin-${name}`}
                   label={name === themed ? `✓ ${name}` : name}
@@ -1263,15 +1309,15 @@ export const register: Register = on => {
     )
     if (ls.length === 0) {
       return (
-        <Box flexDirection="column" paddingX={1}>
-          <Text dimColor>Your usage appears after Claude's next reply.</Text>
+        <Box flexDirection="column" paddingX={1} {...ink.pane}>
+          <Text {...ink.faint}>Your usage appears after Claude's next reply.</Text>
           {controls}
           {skins}
         </Box>
       )
     }
     return (
-      <Box flexDirection="column" paddingX={1} gap={1}>
+      <Box flexDirection="column" paddingX={1} gap={1} {...ink.pane}>
         {ls.map(l => {
           const left = resetIn(l.resetsAt, t)
           const mins = l.kind === 'five_hour' ? minutesToLimit(hist5, t) : null
@@ -1279,15 +1325,15 @@ export const register: Register = on => {
           const pct = Math.min(100, Math.max(0, l.percent))
           return (
             <Box key={`u-${l.kind}`} flexDirection="column">
-              <Text bold>{limitName(l.kind)}</Text>
+              <Text bold {...ink.plain}>{limitName(l.kind)}</Text>
               <Box justifyContent="space-between" alignItems="flex-end">
                 <Box alignItems="flex-end" gap={1}>
                   <Text bold color={gradientAt(pct / 100, pal)}>
                     {l.percent}%
                   </Text>
-                  <Text dimColor>used</Text>
+                  <Text {...ink.faint}>used</Text>
                 </Box>
-                <Text color={left !== null ? countdownColor(l.percent) : undefined} dimColor={left === null}>
+                <Text {...(left !== null ? { color: countdownColor(l.percent) } : ink.faint)}>
                   {left !== null ? `resets in ${left}` : 'reset time not reported'}
                 </Text>
               </Box>
@@ -1296,9 +1342,9 @@ export const register: Register = on => {
                   ⚠ At the recent pace, the {warn} — before the reset
                 </Text>
               ) : l.kind !== 'five_hour' ? null : mins !== null ? (
-                <Text dimColor>At the recent pace, the limit lands in ~{minutesText(mins)} — after the reset</Text>
+                <Text {...ink.faint}>At the recent pace, the limit lands in ~{minutesText(mins)} — after the reset</Text>
               ) : (
-                <Text dimColor>Pace appears after a few minutes of readings.</Text>
+                <Text {...ink.faint}>Pace appears after a few minutes of readings.</Text>
               )}
               <Box height={1} width="100%">
                 {pct > 0 ? <Box width={`${Math.max(1, Math.round(pct))}%`} height={1} backgroundColor={gradientAt(pct / 100, pal)} /> : null}
@@ -1309,13 +1355,13 @@ export const register: Register = on => {
         })}
         {ls.every(l => !isFable(l.kind)) ? (
           <Box flexDirection="column">
-            <Text bold dimColor>
+            <Text bold {...ink.faint}>
               Fable (weekly)
             </Text>
             <Box height={1} width="100%">
               <Box flexGrow={1} height={1} backgroundColor="inactive" />
             </Box>
-            <Text dimColor>Not reported to mods; see Settings → Usage for the real figure.</Text>
+            <Text {...ink.faint}>Not reported to mods; see Settings → Usage for the real figure.</Text>
           </Box>
         ) : null}
         {controls}

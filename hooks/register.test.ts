@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
+import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, inksOf, isFable, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -225,4 +225,15 @@ test('skins change the glyphs too', () => {
   expect(THEMES['blueprint']!.deco('Context')).toBe('┤Context├')
   expect(miniCells(60, THEMES['sumi']).map(c => c.ch).join('')).toBe('━━━──')
   expect(gradientAt(1, THEMES['sumi'])).toBe('#c0392b') // full reads as the seal
+})
+
+test('skins dress the surface: backdrop, inks, border and face', () => {
+  const plain = inksOf(THEMES['meadow']!)
+  expect(plain.faint).toEqual({ dimColor: true }) // the default keeps the app's own look
+  expect(plain.pane.backgroundColor).toBeUndefined()
+  const hermes = inksOf(THEMES['hermes']!)
+  expect(hermes.band.backgroundColor).toBe('#0c1a10')
+  expect(hermes.faint).toEqual({ color: '#4f8a5a' })
+  expect(hermes.pane.borderStyle).toBe('single')
+  expect(THEME_NAMES.filter(n => n !== 'meadow').every(n => THEMES[n]!.surface !== undefined)).toBe(true)
 })
