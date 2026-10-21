@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Breakdown, ContextFill, GitInfo, Limit, RunningTool } from '../types'
+import type { Breakdown, ContextFill, GitInfo, Limit, RunningTool, UsageSample } from '../types'
 
 const fill = atom({ plugin: 'context-bar', key: 'fill' } as const, null)
 const compactAt = atom({ plugin: 'context-bar', key: 'compactAt' } as const, null)
@@ -20,6 +20,9 @@ const gitAt = atom({ plugin: 'context-bar', key: 'gitAt' } as const, null)
 const breakdown = atom({ plugin: 'context-bar', key: 'breakdown' } as const, null)
 const autoCompactOn = atom({ plugin: 'context-bar', key: 'autoCompactOn' } as const, false)
 const modelInUse = atom({ plugin: 'context-bar', key: 'modelInUse' } as const, null)
+const fiveHist = atom({ plugin: 'context-bar', key: 'fiveHist' } as const, [])
+const tokHist = atom({ plugin: 'context-bar', key: 'tokHist' } as const, [])
+const lastGrowth = atom({ plugin: 'context-bar', key: 'lastGrowth' } as const, null)
 const soundOn = atom({ plugin: 'context-bar', key: 'soundOn' } as const, true)
 const tickOwner = atom({ plugin: 'context-bar', key: 'tickOwner' } as const, null)
 
@@ -158,6 +161,39 @@ export const limitName = (kind: string) =>
           ? 'Fable (weekly)'
           : kind.replace(/_/g, ' ')
 
+/**
+ * Minutes until the 5h limit is used up at the recent pace, from samples at
+ * least two minutes apart; null when flat, falling or too few samples.
+ */
+export const minutesToLimit = (hist: UsageSample[], nowMs: number): number | null => {
+  const last = hist[hist.length - 1]
+  const first = hist.find(h => last !== undefined && last.at - h.at >= 2 * 60000) ?? hist[0]
+  if (first === undefined || last === undefined || last.at - first.at < 2 * 60000) return null
+  const perMs = (last.percent - first.percent) / (last.at - first.at)
+  if (perMs <= 0 || last.percent >= 100) return null
+  return Math.ceil((100 - last.percent) / perMs / 60000) + Math.round((last.at - nowMs) / 60000)
+}
+
+/** The forecast line, only when the limit would land before the reset at the recent pace. */
+export const forecast = (hist: UsageSample[], resetsAt: string | undefined, nowMs: number): string | null => {
+  const left = minutesToLimit(hist, nowMs)
+  if (left === null) return null
+  const reset = resetsAt === undefined ? NaN : Date.parse(resetsAt)
+  if (Number.isNaN(reset) || nowMs + left * 60000 >= reset) return null
+  return left <= 60 ? `limit in ~${left}m` : `limit in ~${Math.floor(left / 60)}h${String(left % 60).padStart(2, '0')}m`
+}
+
+/** Rough turns to the auto-compact point at the average growth of the last turns. */
+export const turnsLeft = (hist: number[], threshold: number | null): number | null => {
+  if (threshold === null || hist.length < 3) return null
+  const first = hist[0]
+  const last = hist[hist.length - 1]
+  if (first === undefined || last === undefined) return null
+  const per = (last - first) / (hist.length - 1)
+  if (per <= 0 || last >= threshold) return null
+  return Math.max(1, Math.round((threshold - last) / per))
+}
+
 /** Share of the way to auto-compaction, or null when it is off or unknown. */
 export const compactPercent = (tokens: number, threshold: number | null) =>
   threshold === null || threshold <= 0 ? null : Math.min(100, Math.round((tokens / threshold) * 100))
@@ -229,6 +265,16 @@ async function refreshUsage($: EngineInterface, opts: { checkWindow: boolean } =
     update($, startedAt, () => usage.startedAt),
     update($, now, () => at),
   ])
+
+  const fiveNow = nextLimits.find(l => l.kind === 'five_hour')
+  if (fiveNow !== undefined) {
+    await update($, fiveHist, hist => {
+      const next = [...hist, { at, percent: fiveNow.percent }]
+      // A falling reading means the window reset: start the pace over.
+      if (next.length >= 2 && (next[next.length - 2]?.percent ?? 0) > fiveNow.percent) return [{ at, percent: fiveNow.percent }]
+      return next.slice(-30)
+    })
+  }
 
   await checkReset($, at)
 
@@ -416,6 +462,9 @@ async function startTick($: EngineInterface) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
+    await $.command
+      .register({ name: 'contextbar', description: 'Context bar: show, hide, sound and early compaction' })
+      .catch(() => {})
     await Promise.all([
       refreshThreshold($)
         .then(() => refreshUsage($, { checkWindow: false }))
@@ -453,6 +502,34 @@ export const register: Register = on => {
           WRITERS.includes(e.tool) ? refreshGitSoon($) : Promise.resolve(),
         ])
       }
+    }
+  })
+
+  on('command.run', { command: 'contextbar' }, async ($, e) => {
+    const want = e.args.trim().toLowerCase()
+    if (want === 'hide' || want === 'show') {
+      await update($, isHidden, () => want === 'hide')
+      await $.store.set('isHidden', want === 'hide').catch(() => {})
+      return { text: want === 'hide' ? 'Context bar collapsed.' : 'Context bar expanded.' }
+    }
+    if (want === 'sound on' || want === 'sound off') {
+      const enabled = want === 'sound on'
+      await update($, soundOn, () => enabled)
+      await $.store.set('soundOn', enabled).catch(() => {})
+      return { text: enabled ? 'Completion sound on.' : 'Completion sound off.' }
+    }
+    if (want === 'early on' || want === 'early off') {
+      const enabled = want === 'early on'
+      await update($, autoCompactOn, () => enabled)
+      await $.store.set('autoCompactOn', enabled).catch(() => {})
+      return { text: enabled ? `Will compact at ${EARLY_COMPACT_AT}% of the way to auto-compact.` : 'Early compaction off.' }
+    }
+    const [hidden, sound, early] = await Promise.all([read($, isHidden), read($, soundOn), read($, autoCompactOn)])
+    return {
+      text: [
+        `Context bar: ${hidden ? 'collapsed' : 'expanded'} · sound ${sound ? 'on' : 'off'} · early compact ${early ? 'on' : 'off'}`,
+        'Usage: /contextbar show | hide | sound on | sound off | early on | early off',
+      ].join('\n'),
     }
   })
 
@@ -499,6 +576,14 @@ export const register: Register = on => {
         syncSound($),
       ])
       if (e.reason === 'answer') ringDone($).catch(() => {})
+      const f2 = await read($, fill).catch(() => null)
+      if (f2 !== null) {
+        await update($, tokHist, hist => [...hist, f2.tokens].slice(-8)).catch(() => {})
+        await update($, lastGrowth, () => null).catch(() => {})
+        const hist = await read($, tokHist).catch(() => [] as number[])
+        const prev = hist[hist.length - 2]
+        if (prev !== undefined) await update($, lastGrowth, () => f2.tokens - prev).catch(() => {})
+      }
       await syncAutoCompact($).catch(() => {})
       await maybeCompactEarly($).catch(() => {})
     } else {
@@ -511,7 +596,7 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [f, threshold, ls, start, t, tools, turnMs, active, hidden, repo] = await Promise.all([
+    const [f, threshold, ls, start, t, tools, turnMs, active, hidden, repo, hist5, growth] = await Promise.all([
       read($, fill),
       read($, compactAt),
       read($, limits),
@@ -522,6 +607,8 @@ export const register: Register = on => {
       read($, agents),
       read($, isHidden),
       read($, git),
+      read($, fiveHist),
+      read($, lastGrowth),
     ])
     const act = tools[tools.length - 1] ?? null
 
@@ -533,6 +620,7 @@ export const register: Register = on => {
     const five = ls.find(l => l.kind === 'five_hour')
 
     const fiveLeft = five === undefined ? null : resetIn(five.resetsAt, t)
+    const fiveForecast = five === undefined ? null : forecast(hist5, five.resetsAt, t)
     const fable = ls.filter(l => isFable(l.kind))
 
     // One cell per glyph, coloured; the gauges are strips of these.
@@ -560,6 +648,11 @@ export const register: Register = on => {
           {fiveLeft !== null ? (
             <Text color={countdownColor(five.percent)} bold>
               ↻ {fiveLeft}
+            </Text>
+          ) : null}
+          {fiveForecast !== null ? (
+            <Text color="error" bold>
+              ⚠ {fiveForecast}
             </Text>
           ) : null}
         </Box>
@@ -628,6 +721,7 @@ export const register: Register = on => {
               ({kilo(f.tokens)}/{kilo(f.window)})
             </Text>
           ) : null}
+          {growth !== null && growth > 0 ? <Text dimColor>+{kilo(growth)}</Text> : null}
         </Box>
         {toCompact !== null && toCompact >= COMPACT_WARN ? (
           <Text color="warning" bold>
@@ -665,13 +759,15 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: CONTEXT_PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [b, f, threshold, early, inUseModel] = await Promise.all([
+    const [b, f, threshold, early, inUseModel, hist] = await Promise.all([
       read($, breakdown),
       read($, fill),
       read($, compactAt),
       read($, autoCompactOn),
       read($, modelInUse),
+      read($, tokHist),
     ])
+    const turns = turnsLeft(hist, threshold)
     const max = f?.window ?? b?.max ?? 0
     const used = f?.tokens ?? b?.total ?? 0
     const share = (n: number) => (max > 0 ? (n / max) * 100 : 0)
@@ -694,6 +790,7 @@ export const register: Register = on => {
               ? ` · ${modelName(b.model)}`
               : ''}
           {threshold !== null ? ` · auto-compacts at ${kilo(threshold)}` : ''}
+          {turns !== null ? ` · ~${turns} turn${turns === 1 ? '' : 's'} to compact` : ''}
         </Text>
       </Box>
     )

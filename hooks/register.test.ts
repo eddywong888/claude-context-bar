@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, modelName, parseGitStatus, pctText, resetIn, miniCells, trackCells, turnLength, WARN_AT } from './register'
+import { clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, modelName, parseGitStatus, pctText, resetIn, miniCells, trackCells, turnLength, turnsLeft, WARN_AT } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -148,4 +148,28 @@ test('5h dots: five, lit in the gradient, rings for the rest', () => {
 
 test('hidden view gauge uses ▰ and ▱', () => {
   expect(miniCells(51).map(c => c.ch).join('')).toBe('▰▰▰▱▱')
+})
+
+test('forecast warns only when the limit lands before the reset', () => {
+  const t0 = Date.parse('2026-10-21T10:00:00Z')
+  const m = (n: number) => t0 + n * 60000
+  const rising = [
+    { at: m(0), percent: 80 },
+    { at: m(10), percent: 90 },
+  ]
+  // 1%/min: 10 minutes to 100%, reset an hour away → warn
+  expect(forecast(rising, '2026-10-21T11:10:00Z', m(10))).toBe('limit in ~10m')
+  // reset in 5 minutes → it resets first, no warning
+  expect(forecast(rising, '2026-10-21T10:15:00Z', m(10))).toBe(null)
+  // flat usage → no warning
+  expect(forecast([{ at: m(0), percent: 50 }, { at: m(10), percent: 50 }], '2026-10-21T11:00:00Z', m(10))).toBe(null)
+  // too little history → no warning
+  expect(forecast([{ at: m(0), percent: 80 }], '2026-10-21T11:00:00Z', m(0))).toBe(null)
+})
+
+test('turns left to auto-compact from token history', () => {
+  expect(turnsLeft([100_000, 120_000, 140_000], 200_000)).toBe(3)
+  expect(turnsLeft([100_000, 100_000, 100_000], 200_000)).toBe(null)
+  expect(turnsLeft([100_000, 120_000], 200_000)).toBe(null)
+  expect(turnsLeft([100_000, 120_000, 140_000], null)).toBe(null)
 })
