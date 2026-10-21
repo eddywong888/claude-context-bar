@@ -194,6 +194,7 @@ test('usage pane lists each limit, and says when there is none', async ($, on) =
     expect(text).toContain('Current session (5h)')
     expect(text).toContain('Fable (weekly)')
     expect(text).toContain('65%')
+    expect(text).toContain('Pace appears after a few minutes')
     expect(text).not.toContain('appear here once Claude Code reports them')
     await full.unmount()
   }

@@ -821,7 +821,14 @@ export const register: Register = on => {
         <Box key="five" gap={1} alignItems="center">
           {label('5h')}
           <Box>{cells(dotCells(five.percent, pal), 'd')}</Box>
-          <Button key="open-usage" plain dimColor={five.percent < 50} label={`${five.percent}%`} onPress={() => openUsage($)} />
+          <Button
+            key="open-usage"
+            plain
+            hotkey="u"
+            dimColor={five.percent < 50}
+            label={`${five.percent}%`}
+            onPress={() => openUsage($)}
+          />
           {five.percent >= 80 ? <Text color="error">⚠</Text> : null}
           {fiveLeft !== null ? (
             <Text color={countdownColor(five.percent)} bold>
@@ -872,7 +879,7 @@ export const register: Register = on => {
         <Box flexWrap="wrap" columnGap={2} alignItems="center">
           <Box gap={1} alignItems="center">
             {contextGauge('mini')}
-            <Button key="open-context" plain label={`${Math.round(percent)}%`} onPress={() => openContext($)} />
+            <Button key="open-context" plain hotkey="x" label={`${Math.round(percent)}%`} onPress={() => openContext($)} />
           </Box>
           {fiveGroup}
           {gitGroup(true)}
@@ -888,7 +895,7 @@ export const register: Register = on => {
         <Box gap={1} alignItems="center">
           {label('Context')}
           {contextGauge('full')}
-          <Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} />
+          <Button key="open-context" plain hotkey="x" label={`${pctText(percent)}%`} onPress={() => openContext($)} />
           {f !== null ? (
             <Text dimColor>
               ({kilo(f.tokens)}/{kilo(f.window)})
@@ -1130,6 +1137,7 @@ export const register: Register = on => {
       <Box flexDirection="column" paddingX={1} gap={1}>
         {ls.map(l => {
           const left = resetIn(l.resetsAt, t)
+          const mins = l.kind === 'five_hour' ? minutesToLimit(hist5, t) : null
           const warn = l.kind === 'five_hour' ? forecast(hist5, l.resetsAt, t) : null
           const pct = Math.min(100, Math.max(0, l.percent))
           return (
@@ -1150,7 +1158,15 @@ export const register: Register = on => {
                 <Text color="error" bold>
                   ⚠ At the recent pace, the {warn} — before the reset
                 </Text>
-              ) : null}
+              ) : l.kind !== 'five_hour' ? null : mins !== null ? (
+                <Text dimColor>
+                  At the recent pace, the limit lands in ~
+                  {mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${String(mins % 60).padStart(2, '0')}m`} — after the
+                  reset
+                </Text>
+              ) : (
+                <Text dimColor>Pace appears after a few minutes of readings.</Text>
+              )}
               <Box height={1} width="100%">
                 {pct > 0 ? <Box width={`${Math.max(1, Math.round(pct))}%`} height={1} backgroundColor={gradientAt(pct / 100, pal)} /> : null}
                 <Box flexGrow={1} height={1} backgroundColor="inactive" />
