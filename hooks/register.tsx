@@ -824,7 +824,6 @@ export const register: Register = on => {
           <Button
             key="open-usage"
             plain
-            hotkey="u"
             dimColor={five.percent < 50}
             label={`${five.percent}%`}
             onPress={() => openUsage($)}
@@ -879,7 +878,7 @@ export const register: Register = on => {
         <Box flexWrap="wrap" columnGap={2} alignItems="center">
           <Box gap={1} alignItems="center">
             {contextGauge('mini')}
-            <Button key="open-context" plain hotkey="x" label={`${Math.round(percent)}%`} onPress={() => openContext($)} />
+            <Button key="open-context" plain label={`${Math.round(percent)}%`} onPress={() => openContext($)} />
           </Box>
           {fiveGroup}
           {gitGroup(true)}
@@ -895,7 +894,7 @@ export const register: Register = on => {
         <Box gap={1} alignItems="center">
           {label('Context')}
           {contextGauge('full')}
-          <Button key="open-context" plain hotkey="x" label={`${pctText(percent)}%`} onPress={() => openContext($)} />
+          <Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} />
           {f !== null ? (
             <Text dimColor>
               ({kilo(f.tokens)}/{kilo(f.window)})
@@ -926,8 +925,8 @@ export const register: Register = on => {
         {gitGroup(false)}
         {turnMs !== null || elapsed !== null ? (
           <Box gap={1}>
-            {turnMs !== null ? <Text dimColor>last {turnLength(turnMs)}</Text> : null}
-            {elapsed !== null ? <Text dimColor>session {elapsed}</Text> : null}
+            {turnMs !== null ? <Text dimColor>L:{turnLength(turnMs)}</Text> : null}
+            {elapsed !== null ? <Text dimColor>Total:{elapsed}</Text> : null}
           </Box>
         ) : null}
         {workGroup}
