@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, modelName, parseGitStatus, pctText, resetIn, THEMES, THEME_NAMES, usd, miniCells, trackCells, turnLength, turnsLeft, WARN_AT } from './register'
+import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, miniCells, modelName, parseGitStatus, pctText, resetIn, trackCells, turnLength, turnsLeft, usd } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -192,10 +192,17 @@ test('forecast minutes never go negative with stale samples', () => {
 })
 
 test('themes: three palettes, distinct from the first cell, default untouched', () => {
-  expect(THEME_NAMES).toEqual(['meadow', 'ocean', 'ember'])
+  expect(THEME_NAMES).toEqual(['meadow', 'ocean', 'ember', 'hermes', 'mono', 'retro', 'cyberpunk'])
   expect(gradientAt(0)).toBe('#117a2e') // default stays meadow
   expect(gradientAt(0, THEMES['ocean'])).toBe('#0e7490')
   expect(gradientAt(1, THEMES['ocean'])).toBe('#be185d')
   expect(gradientAt(0, THEMES['ember'])).toBe('#9a7b0a')
   expect(trackCells(50, 12, WARN_AT, THEMES['ocean']).find(c => c.ch === '┃')?.color).toBe('#1e3a5f')
+})
+
+test('skins change the glyphs too', () => {
+  const retro = trackCells(50, 12, WARN_AT, THEMES['retro'])
+  expect(retro.map(c => c.ch).join('')).toBe('██████...|...')
+  expect(dotCells(40, THEMES['hermes']).map(c => c.ch).join('')).toBe('●●···')
+  expect(miniCells(60, THEMES['mono']).map(c => c.ch).join('')).toBe('◼◼◼◻◻')
 })

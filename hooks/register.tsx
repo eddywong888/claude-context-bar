@@ -55,7 +55,15 @@ export type Palette = {
   track: string
   trackDots: string
   notch: string
+  /** The gauges' characters: filled and empty cells, 5h dots, mini cells, the warning line. */
+  glyphs: { fill: string; empty: string; dotOn: string; dotOff: string; miniOn: string; miniOff: string; marker: string }
+  /** How the band's labels (Context, 5h, Fable) are dressed. */
+  deco: (label: string) => string
+  /** Ink for those labels; absent, the surface's dim text. */
+  labelInk?: string
 }
+
+const PLAIN_GLYPHS = { fill: '█', empty: '░', dotOn: '●', dotOff: '○', miniOn: '▰', miniOff: '▱', marker: '┃' }
 
 export const THEMES: Record<string, Palette> = {
   // Green to amber to red: the data-semantic default.
@@ -68,6 +76,8 @@ export const THEMES: Record<string, Palette> = {
     track: '#c9ced6',
     trackDots: '#9aa1ab',
     notch: '#8a5a1f',
+    glyphs: PLAIN_GLYPHS,
+    deco: label => label,
   },
   // Teal to indigo to magenta: pressure as deepening water, no red at all.
   ocean: {
@@ -79,6 +89,8 @@ export const THEMES: Record<string, Palette> = {
     track: '#b6c2cf',
     trackDots: '#8da0b3',
     notch: '#1e3a5f',
+    glyphs: PLAIN_GLYPHS,
+    deco: label => label,
   },
   // Old gold to burnt orange to crimson: warm from the first cell.
   ember: {
@@ -90,6 +102,63 @@ export const THEMES: Record<string, Palette> = {
     track: '#cfc8bd',
     trackDots: '#aaa08f',
     notch: '#4a3728',
+    glyphs: PLAIN_GLYPHS,
+    deco: label => label,
+  },
+  // Green phosphor terminal: one hue, brightening as it fills, prompt-style labels.
+  hermes: {
+    stops: [
+      [0x14, 0x5a, 0x32],
+      [0x2f, 0xb4, 0x5a],
+      [0x9b, 0xe5, 0x64],
+    ],
+    track: '#2a2f2a',
+    trackDots: '#4a554a',
+    notch: '#9ef01a',
+    glyphs: { fill: '█', empty: '·', dotOn: '●', dotOff: '·', miniOn: '█', miniOff: '·', marker: '│' },
+    deco: label => `>${label.toLowerCase()}`,
+    labelInk: '#2fb45a',
+  },
+  // One ink, no colour: shade carries the reading.
+  mono: {
+    stops: [
+      [0x9a, 0xa0, 0xa6],
+      [0x5f, 0x63, 0x68],
+      [0x20, 0x21, 0x24],
+    ],
+    track: '#d7d9dc',
+    trackDots: '#b9bdc2',
+    notch: '#202124',
+    glyphs: { fill: '▓', empty: '░', dotOn: '◉', dotOff: '○', miniOn: '◼', miniOff: '◻', marker: '│' },
+    deco: label => label,
+  },
+  // Amber CRT: bracketed capitals and phosphor orange.
+  retro: {
+    stops: [
+      [0x8a, 0x5a, 0x00],
+      [0xb3, 0x6b, 0x00],
+      [0xe8, 0x5d, 0x04],
+    ],
+    track: '#d8cdb8',
+    trackDots: '#b8a98a',
+    notch: '#7a3b00',
+    glyphs: { fill: '█', empty: '.', dotOn: '■', dotOff: '.', miniOn: '█', miniOff: '.', marker: '|' },
+    deco: label => `[${label.toUpperCase()}]`,
+    labelInk: '#b36b00',
+  },
+  // Neon on dark glass: cyan into violet into magenta.
+  cyberpunk: {
+    stops: [
+      [0x00, 0x9f, 0xb7],
+      [0x7c, 0x3a, 0xed],
+      [0xd9, 0x00, 0x8f],
+    ],
+    track: '#3a3f4b',
+    trackDots: '#565d6d',
+    notch: '#f72585',
+    glyphs: { fill: '█', empty: '▒', dotOn: '◉', dotOff: '◌', miniOn: '▰', miniOff: '▱', marker: '┊' },
+    deco: label => `▸${label}`,
+    labelInk: '#00c2d1',
   },
 }
 
@@ -136,22 +205,26 @@ export const trackCells = (percent: number, width: number, warnPercent: number |
   const warn = warnPercent === null ? -1 : Math.min(width, Math.max(0, Math.round((warnPercent / 100) * width)))
   const out: { ch: string; color: string; dim?: boolean }[] = []
   for (let i = 0; i <= width; i++) {
-    if (i === warn) out.push({ ch: '┃', color: pal.notch })
+    if (i === warn) out.push({ ch: pal.glyphs.marker, color: pal.notch })
     if (i === width) break
-    out.push(i < lit ? { ch: '█', color: gradientAt(width <= 1 ? 0 : i / (width - 1), pal) } : { ch: '░', color: pal.trackDots, dim: true })
+    out.push(
+      i < lit
+        ? { ch: pal.glyphs.fill, color: gradientAt(width <= 1 ? 0 : i / (width - 1), pal) }
+        : { ch: pal.glyphs.empty, color: pal.trackDots, dim: true },
+    )
   }
   return out
 }
 
 /** The hidden view's five-cell gauge: ▰ lit in the gradient, ▱ unlit. */
 export const miniCells = (percent: number, pal: Palette = THEMES['meadow']!) => {
-  const { on, off } = mini(percent, '▰', '▱')
+  const { on, off } = mini(percent, pal.glyphs.miniOn, pal.glyphs.miniOff)
   return [...gradientCells(on, 0, MINI, pal), ...[...off].map(ch => ({ ch, color: pal.track }))]
 }
 
 /** Five dots for the 5h window: lit ones in the gradient, the rest as rings. */
 export const dotCells = (percent: number, pal: Palette = THEMES['meadow']!) => {
-  const { on, off } = mini(percent, '●', '○')
+  const { on, off } = mini(percent, pal.glyphs.dotOn, pal.glyphs.dotOff)
   return [...gradientCells(on, 0, MINI, pal), ...[...off].map(ch => ({ ch, color: pal.track }))]
 }
 
@@ -722,6 +795,11 @@ export const register: Register = on => {
     const five = ls.find(l => l.kind === 'five_hour')
     const pal = paletteOf(themed)
 
+    const label = (text: string) => (
+      <Text color={pal.labelInk} dimColor={pal.labelInk === undefined}>
+        {pal.deco(text)}
+      </Text>
+    )
     const fiveLeft = five === undefined ? null : resetIn(five.resetsAt, t)
     const fiveForecast = five === undefined ? null : forecast(hist5, five.resetsAt, t)
     const fable = ls.filter(l => isFable(l.kind))
@@ -744,7 +822,7 @@ export const register: Register = on => {
     const fiveGroup =
       five === undefined ? null : (
         <Box key="five" gap={1} alignItems="center">
-          <Text dimColor>5h</Text>
+          {label('5h')}
           <Box>{cells(dotCells(five.percent, pal), 'd')}</Box>
           <Button key="open-usage" plain dimColor={five.percent < 50} label={`${five.percent}%`} onPress={() => openUsage($)} />
           {five.percent >= 80 ? <Text color="error">⚠</Text> : null}
@@ -816,7 +894,7 @@ export const register: Register = on => {
     return (
       <Box flexWrap="wrap" columnGap={2} alignItems="center">
         <Box gap={1} alignItems="center">
-          <Text dimColor>Context</Text>
+          {label('Context')}
           {contextGauge('full')}
           <Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} />
           {f !== null ? (
@@ -839,7 +917,7 @@ export const register: Register = on => {
         {fiveGroup}
         {fable.map(l => (
           <Box key={l.kind} gap={1} alignItems="center">
-            <Text dimColor>Fable</Text>
+            {label('Fable')}
             <Box>{cells(trackCells(l.percent, SMOOTH, null, pal), `f${l.kind}`)}</Box>
             <Text dimColor={l.percent < 50} color={l.percent >= 80 ? 'error' : undefined}>
               {l.percent}%
