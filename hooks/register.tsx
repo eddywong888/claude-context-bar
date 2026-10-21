@@ -74,7 +74,13 @@ export type Surface = {
   borderColor: string
   /** Labels in italic. */
   italic?: boolean
+  /** A light tray under the app's own buttons, which keep their light-theme ink; dark skins need one. */
+  tray?: string
+  /** Stand-ins for the app's status colours that read on this backdrop. */
+  tones?: Partial<Record<Tone, string>>
 }
+
+export type Tone = 'suggestion' | 'warning' | 'error' | 'claude'
 
 const PLAIN_GLYPHS = { fill: '█', empty: '░', dotOn: '●', dotOff: '○', miniOn: '▰', miniOff: '▱', marker: '┃' }
 
@@ -123,17 +129,17 @@ export const THEMES: Record<string, Palette> = {
   // Green phosphor terminal: one hue, brightening as it fills, prompt-style labels.
   hermes: {
     stops: [
-      [0x14, 0x5a, 0x32],
-      [0x2f, 0xb4, 0x5a],
-      [0x9b, 0xe5, 0x64],
+      [0x3f, 0xb8, 0x68],
+      [0x7d, 0xdc, 0x6a],
+      [0xd4, 0xf5, 0x7a],
     ],
-    track: '#2a2f2a',
-    trackDots: '#4a554a',
+    track: '#3d5a44',
+    trackDots: '#5f8a68',
     notch: '#9ef01a',
     glyphs: { fill: '█', empty: '·', dotOn: '●', dotOff: '·', miniOn: '█', miniOff: '·', marker: '│' },
     deco: label => `>${label.toLowerCase()}`,
-    labelInk: '#2fb45a',
-    surface: { bg: '#0c1a10', ink: '#9be564', faint: '#4f8a5a', border: 'single', borderColor: '#2fb45a' },
+    labelInk: '#7ddc6a',
+    surface: { bg: '#0c1a10', ink: '#9be564', faint: '#8cc79a', border: 'single', borderColor: '#2fb45a', tray: '#d4eadb', tones: { suggestion: '#7fd8f0', warning: '#f2d16b', error: '#ff7b7b', claude: '#f7a96b' } },
   },
   // One ink, no colour: shade carries the reading.
   mono: {
@@ -152,32 +158,32 @@ export const THEMES: Record<string, Palette> = {
   // Amber CRT: bracketed capitals and phosphor orange.
   retro: {
     stops: [
-      [0x8a, 0x5a, 0x00],
-      [0xb3, 0x6b, 0x00],
-      [0xe8, 0x5d, 0x04],
+      [0xd9, 0x9a, 0x1e],
+      [0xf2, 0xb1, 0x1a],
+      [0xff, 0x6a, 0x1a],
     ],
     track: '#d8cdb8',
     trackDots: '#b8a98a',
     notch: '#7a3b00',
     glyphs: { fill: '█', empty: '.', dotOn: '■', dotOff: '.', miniOn: '█', miniOff: '.', marker: '|' },
     deco: label => `[${label.toUpperCase()}]`,
-    labelInk: '#b36b00',
-    surface: { bg: '#1c1306', ink: '#ffb000', faint: '#9a7434', border: 'double', borderColor: '#b36b00' },
+    labelInk: '#f2b11a',
+    surface: { bg: '#1c1306', ink: '#ffb000', faint: '#d6b071', border: 'double', borderColor: '#b36b00', tray: '#f1e2c4', tones: { suggestion: '#ffd27f', warning: '#ffe066', error: '#ff7a5c', claude: '#ffab5c' } },
   },
   // Neon on dark glass: cyan into violet into magenta.
   cyberpunk: {
     stops: [
-      [0x00, 0x9f, 0xb7],
-      [0x7c, 0x3a, 0xed],
-      [0xd9, 0x00, 0x8f],
+      [0x22, 0xd3, 0xee],
+      [0xa7, 0x7b, 0xff],
+      [0xff, 0x4d, 0xb8],
     ],
-    track: '#3a3f4b',
-    trackDots: '#565d6d',
+    track: '#4a4170',
+    trackDots: '#7468a6',
     notch: '#f72585',
     glyphs: { fill: '█', empty: '▒', dotOn: '◉', dotOff: '◌', miniOn: '▰', miniOff: '▱', marker: '┊' },
     deco: label => `▸${label}`,
-    labelInk: '#00c2d1',
-    surface: { bg: '#140c24', ink: '#ece6ff', faint: '#8b7cb8', border: 'bold', borderColor: '#f72585', italic: true },
+    labelInk: '#22d3ee',
+    surface: { bg: '#140c24', ink: '#ece6ff', faint: '#b8aee0', border: 'bold', borderColor: '#f72585', italic: true, tray: '#e2dcf7', tones: { suggestion: '#5ee0f5', warning: '#ffd166', error: '#ff5c9a', claude: '#ffa36b' } },
   },
   // A cup filling: short blocks rise to tall ones, milky caramel darkening to espresso.
   latte: {
@@ -238,6 +244,10 @@ export const inksOf = (pal: Palette) => {
     faint: sf === undefined ? { dimColor: true } : { color: sf.faint },
     /** The band's backdrop. */
     band: { backgroundColor: sf?.bg, paddingX: sf === undefined ? 0 : 1 },
+    /** A status colour as this skin draws it. */
+    tone: (key: Tone) => sf?.tones?.[key] ?? key,
+    /** Under the app's buttons: the skin's tray, if it has one. */
+    tray: { backgroundColor: sf?.tray, paddingX: sf?.tray === undefined ? 0 : 1 },
     /** A panel's backdrop and border. */
     pane: { backgroundColor: sf?.bg, borderStyle: sf?.border, borderColor: sf?.borderColor, flexGrow: 1 },
   }
@@ -317,7 +327,7 @@ export const unitRuns = (text: string) =>
   (text.match(/\d+|\D+/g) ?? []).map(run => ({ run, unit: !/^\d/.test(run) }))
 
 /** The reset countdown: blue while usage is easy, warning colours as the limit nears. */
-export const countdownColor = (percent: number) =>
+export const countdownColor = (percent: number): Tone =>
   percent >= 80 ? 'error' : percent >= 50 ? 'warning' : 'suggestion'
 
 /** Session age as "12m", "1h15m" or, past a day, "1d11h52m". */
@@ -968,16 +978,18 @@ export const register: Register = on => {
         <Box key="five" gap={1} alignItems="center">
           {label('5h')}
           <Box>{cells(dotCells(five.percent, pal), 'd')}</Box>
-          <Button
-            key="open-usage"
-            plain
-            dimColor={five.percent < 50}
-            label={`${five.percent}%`}
-            onPress={() => openUsage($)}
-          />
-          {five.percent >= 80 ? <Text color="error">⚠</Text> : null}
+          <Box {...ink.tray}>
+            <Button
+              key="open-usage"
+              plain
+              dimColor={five.percent < 50}
+              label={`${five.percent}%`}
+              onPress={() => openUsage($)}
+            />
+          </Box>
+          {five.percent >= 80 ? <Text color={ink.tone('error')}>⚠</Text> : null}
           {fiveLeft !== null ? (
-            <Text color={countdownColor(five.percent)} bold>
+            <Text color={ink.tone(countdownColor(five.percent))} bold>
               ↻ {fiveLeft}
             </Text>
           ) : null}
@@ -987,12 +999,12 @@ export const register: Register = on => {
     const gitGroup = (compact: boolean) =>
       repo === null ? null : (
         <Box key="git" gap={1}>
-          <Text color="suggestion" bold>
+          <Text color={ink.tone('suggestion')} bold>
             ⎇ {repo.branch}
             {compact && repo.changed > 0 ? '*' : ''}
           </Text>
           {!compact && repo.changed > 0 ? (
-            <Text color="warning" bold>
+            <Text color={ink.tone('warning')} bold>
               ✎{repo.changed}
             </Text>
           ) : null}
@@ -1005,14 +1017,14 @@ export const register: Register = on => {
       <Box key="work" gap={2}>
         {e.props.isWorking ? (
           <Box gap={1}>
-            <Text color="claude" bold>
+            <Text color={ink.tone('claude')} bold>
               ▶ {act === null ? 'thinking…' : act.tool}
             </Text>
             {act?.detail !== undefined ? <Text {...ink.faint}>{act.detail}</Text> : null}
           </Box>
         ) : null}
         {active.length > 0 ? (
-          <Text color="suggestion">
+          <Text color={ink.tone('suggestion')}>
             ⧉ {active.length}
             {hidden ? '' : ` agent${active.length > 1 ? 's' : ''}: ${active.slice(0, 3).join(', ')}${active.length > 3 ? '…' : ''}`}
           </Text>
@@ -1025,13 +1037,13 @@ export const register: Register = on => {
         <Box flexWrap="wrap" columnGap={2} alignItems="center" {...ink.band}>
           <Box gap={1} alignItems="center">
             {contextGauge('mini')}
-            <Button key="open-context" plain label={`${Math.round(percent)}%`} onPress={() => openContext($)} />
+            <Box {...ink.tray}><Button key="open-context" plain label={`${Math.round(percent)}%`} onPress={() => openContext($)} /></Box>
           </Box>
           {fiveGroup}
           {gitGroup(true)}
           {workGroup}
           <Box flexGrow={1} />
-          <Button key="show" label="Show" onPress={() => toggleHidden($)} />
+          <Box {...ink.tray}><Button key="show" label="Show" onPress={() => toggleHidden($)} /></Box>
         </Box>
       )
     }
@@ -1041,7 +1053,7 @@ export const register: Register = on => {
         <Box gap={1} alignItems="center">
           {label('Context')}
           {contextGauge('full')}
-          <Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} />
+          <Box {...ink.tray}><Button key="open-context" plain label={`${pctText(percent)}%`} onPress={() => openContext($)} /></Box>
           {f !== null ? (
             <Text {...ink.faint}>
               ({kilo(f.tokens)}/{kilo(f.window)})
@@ -1050,12 +1062,12 @@ export const register: Register = on => {
           {growth !== null && growth > 0 ? <Text {...ink.faint}>+{kilo(growth)}</Text> : null}
         </Box>
         {toCompact !== null && toCompact >= COMPACT_WARN ? (
-          <Text color="warning" bold>
+          <Text color={ink.tone('warning')} bold>
             ⚠ auto-compact {toCompact}%
           </Text>
         ) : null}
         {toCompact === null && percent >= 90 ? (
-          <Text color="error" bold>
+          <Text color={ink.tone('error')} bold>
             ⚠ nearly full, /compact
           </Text>
         ) : null}
@@ -1064,7 +1076,7 @@ export const register: Register = on => {
           <Box key={l.kind} gap={1} alignItems="center">
             {label('Fable')}
             <Box>{cells(trackCells(l.percent, SMOOTH, null, pal), `f${l.kind}`)}</Box>
-            <Text {...(l.percent >= 80 ? { color: 'error' } : l.percent < 50 ? ink.faint : ink.plain)}>
+            <Text {...(l.percent >= 80 ? { color: ink.tone('error') } : l.percent < 50 ? ink.faint : ink.plain)}>
               {l.percent}%
             </Text>
           </Box>
@@ -1079,13 +1091,11 @@ export const register: Register = on => {
         {workGroup}
         <Box flexGrow={1} />
         {toCompact !== null && toCompact >= 70 ? (
-          <Button
-            key="bar-compact"
-            label="Compact"
-            onPress={() => compactNow($)}
-          />
+          <Box {...ink.tray}>
+            <Button key="bar-compact" label="Compact" onPress={() => compactNow($)} />
+          </Box>
         ) : null}
-        <Button key="hide" label="Hide" onPress={() => toggleHidden($)} />
+        <Box {...ink.tray}><Button key="hide" label="Hide" onPress={() => toggleHidden($)} /></Box>
       </Box>
     )
   })
@@ -1140,7 +1150,7 @@ export const register: Register = on => {
         <Box flexDirection="column" paddingX={1} {...ink.pane}>
           {headline}
           <Text {...ink.faint}>The breakdown appears after Claude's next reply.</Text>
-          <Box gap={2} marginTop={1}>
+          <Box gap={2} marginTop={1} {...ink.tray}>
             <Button
               key="ctx-refresh"
               label="Refresh"
@@ -1209,7 +1219,7 @@ export const register: Register = on => {
         {section('In use', inUse, false, true)}
         {section('Room left', spare, true, true)}
         {section('Loaded when needed', later, true, false)}
-        <Box gap={2} marginTop={1} flexWrap="wrap">
+        <Box gap={2} marginTop={1} flexWrap="wrap" {...ink.tray}>
           <Button
             key="ctx-refresh"
             hotkey="r"
@@ -1267,7 +1277,7 @@ export const register: Register = on => {
     const skins = (
       <Box flexDirection="column" marginTop={1}>
         <Text bold {...ink.plain}>Skin</Text>
-        <Box columnGap={3} flexWrap="wrap">
+        <Box columnGap={3} flexWrap="wrap" {...ink.tray}>
           {THEME_NAMES.map(name => {
             const sample = THEMES[name]!
             return (
@@ -1293,7 +1303,7 @@ export const register: Register = on => {
       </Box>
     )
     const controls = (
-      <Box gap={2} marginTop={1} flexWrap="wrap">
+      <Box gap={2} marginTop={1} flexWrap="wrap" {...ink.tray}>
         <Button key="usage-refresh" hotkey="r" label="Refresh" onPress={() => refreshUsage($).catch(() => {})} />
         <Button key="usage-sound" hotkey="s" label={sound ? 'Sound: on' : 'Sound: off'} onPress={() => toggleSound($).catch(() => {})} />
         <Button key="usage-hide-bar" label="Hide the bar" onPress={() => toggleHidden($).catch(() => {})} />
@@ -1333,12 +1343,12 @@ export const register: Register = on => {
                   </Text>
                   <Text {...ink.faint}>used</Text>
                 </Box>
-                <Text {...(left !== null ? { color: countdownColor(l.percent) } : ink.faint)}>
+                <Text {...(left !== null ? { color: ink.tone(countdownColor(l.percent)) } : ink.faint)}>
                   {left !== null ? `resets in ${left}` : 'reset time not reported'}
                 </Text>
               </Box>
               {warn !== null ? (
-                <Text color="error" bold>
+                <Text color={ink.tone('error')} bold>
                   ⚠ At the recent pace, the {warn} — before the reset
                 </Text>
               ) : l.kind !== 'five_hour' ? null : mins !== null ? (

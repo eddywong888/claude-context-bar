@@ -233,7 +233,14 @@ test('skins dress the surface: backdrop, inks, border and face', () => {
   expect(plain.pane.backgroundColor).toBeUndefined()
   const hermes = inksOf(THEMES['hermes']!)
   expect(hermes.band.backgroundColor).toBe('#0c1a10')
-  expect(hermes.faint).toEqual({ color: '#4f8a5a' })
+  expect(hermes.faint).toEqual({ color: '#8cc79a' })
   expect(hermes.pane.borderStyle).toBe('single')
   expect(THEME_NAMES.filter(n => n !== 'meadow').every(n => THEMES[n]!.surface !== undefined)).toBe(true)
+  expect(plain.tone('suggestion')).toBe('suggestion') // light skins keep the app's status colours
+  expect(plain.tray.backgroundColor).toBeUndefined()
+  for (const dark of ['hermes', 'retro', 'cyberpunk']) {
+    const ink = inksOf(THEMES[dark]!)
+    expect(ink.tray.backgroundColor).toBeDefined() // the app's buttons sit on a light tray
+    expect(ink.tone('suggestion')).not.toBe('suggestion')
+  }
 })

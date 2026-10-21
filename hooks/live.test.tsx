@@ -428,7 +428,7 @@ test('the skin picker sets a palette and /contextbar theme sets one', async ($, 
   expect((await pane.findAll({ type: 'Box' })).some(x => x.props.borderStyle === 'single' && x.props.backgroundColor === '#0c1a10')).toBe(true)
   const boxes = (await band.findAll({ type: 'Box' })).map(x => x.props.backgroundColor)
   expect(boxes).toContain('#0c1a10') // the band takes the skin's backdrop
-  expect((await band.findAll({ type: 'Text' })).map(x => x.props.color)).toContain('#4f8a5a') // faint text in the skin's ink
+  expect((await band.findAll({ type: 'Text' })).map(x => x.props.color)).toContain('#8cc79a') // faint text in the skin's ink
 
   const set = await $.command.run({ command: 'contextbar', args: 'theme ember' } as never)
   expect(set.text).toBe('Theme: ember.')
