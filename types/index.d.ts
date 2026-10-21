@@ -19,6 +19,7 @@ declare module 'claude-code' {
       lastTurnMs: number | null
       turnStartedAt: number | null
       tickOwner: string | null
+      soundOn: boolean
       isHidden: boolean
       resetNoticed: string | null
       git: GitInfo | null

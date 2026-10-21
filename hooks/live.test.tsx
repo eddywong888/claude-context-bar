@@ -228,3 +228,46 @@ test('a panel that cannot be placed falls back to a toast', async ($, on) => {
   expect(toasts.join(' ')).toContain('5h limit 30% used')
   await ui.unmount()
 })
+
+test('a finished answer rings done.wav; the usage panel toggles it off', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  const played: string[] = []
+  on('session.usage', () => ({
+    value: {
+      startedAt: 0,
+      context: { tokens: 1, window: 200_000, percent: 0 },
+      rateLimits: [{ kind: 'five_hour', percentUsed: 10 }],
+    },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
+  on('audio.play', (_$, e) => {
+    played.push(String((e as { clip?: { asset?: string } }).clip?.asset))
+    return { value: undefined } as never
+  })
+  on('turn.complete', () => ({ text: '' }) as never)
+
+  const pane = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'context-bar-usage',
+    props: { title: 'Usage', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
+  })
+
+  await $.turn.complete({ reason: 'answer', answer: 'done', turnId: 't1' } as never)
+  expect(played).toEqual(['sounds/done.wav'])
+
+
+  await pane.press({ key: 'usage-sound' })
+  await $.turn.complete({ reason: 'answer', answer: 'done', turnId: 't2' } as never)
+  expect(played.length).toBe(1)
+
+  // An interrupted turn stays silent even with the sound on.
+  await pane.press({ key: 'usage-sound' })
+  played.length = 0
+  await $.turn.complete({ reason: 'aborted', turnId: 't3' } as never)
+  expect(played).toEqual([])
+  await pane.unmount()
+})

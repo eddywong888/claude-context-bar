@@ -18,6 +18,7 @@ const resetNoticed = atom({ plugin: 'context-bar', key: 'resetNoticed' } as cons
 const git = atom({ plugin: 'context-bar', key: 'git' } as const, null)
 const gitAt = atom({ plugin: 'context-bar', key: 'gitAt' } as const, null)
 const breakdown = atom({ plugin: 'context-bar', key: 'breakdown' } as const, null)
+const soundOn = atom({ plugin: 'context-bar', key: 'soundOn' } as const, true)
 const tickOwner = atom({ plugin: 'context-bar', key: 'tickOwner' } as const, null)
 
 const CONTEXT_PANE = 'context-bar-context'
@@ -296,6 +297,26 @@ async function openUsage($: EngineInterface) {
   }
 }
 
+/** Rings the completion sound (castle-mod's done.wav) when it is turned on. */
+async function ringDone($: EngineInterface) {
+  try {
+    if (await read($, soundOn)) await $.audio.play({ asset: 'sounds/done.wav' })
+  } catch {
+    // No player on this platform, or the clip could not play.
+  }
+}
+
+async function toggleSound($: EngineInterface) {
+  const next = await update($, soundOn, was => !was)
+  await $.store.set('soundOn', next).catch(() => {})
+  if (next) ringDone($).catch(() => {})
+}
+
+async function syncSound($: EngineInterface) {
+  const stored = await $.store.get('soundOn')
+  await update($, soundOn, () => stored !== false)
+}
+
 async function toggleHidden($: EngineInterface) {
   const next = await update($, isHidden, was => !was)
   await $.store.set('isHidden', next).catch(() => {})
@@ -370,6 +391,7 @@ export const register: Register = on => {
       startTick($).catch(() => {}),
       refreshGit($).catch(() => {}),
       syncHidden($).catch(() => {}),
+      syncSound($).catch(() => {}),
     ])
     return result
   })
@@ -433,7 +455,9 @@ export const register: Register = on => {
         refreshGit($),
         refreshAgents($),
         syncHidden($),
+        syncSound($),
       ])
+      if (e.reason === 'answer') ringDone($).catch(() => {})
     } else {
       await refreshAgents($).catch(() => {})
     }
@@ -597,7 +621,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: CONTEXT_PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const [b, f, threshold] = await Promise.all([read($, breakdown), read($, fill), read($, compactAt)])
     const max = f?.window ?? b?.max ?? 0
     const used = f?.tokens ?? b?.total ?? 0
@@ -625,6 +649,9 @@ export const register: Register = on => {
         <Box flexDirection="column" paddingX={1}>
           {headline}
           <Text dimColor>The breakdown appears after Claude's next reply.</Text>
+          <Box gap={2} marginTop={1}>
+            <Button key="ctx-refresh" label="Refresh" onPress={() => refreshThreshold($).catch(() => {})} />
+          </Box>
         </Box>
       )
     }
@@ -675,17 +702,55 @@ export const register: Register = on => {
         {section('In use', inUse, false, true)}
         {section('Room left', spare, true, true)}
         {section('Loaded when needed', later, true, false)}
+        <Box gap={2} marginTop={1} flexWrap="wrap">
+          <Button key="ctx-refresh" label="Refresh" onPress={() => refreshThreshold($).catch(() => {})} />
+          <Button
+            key="ctx-compact"
+            label="Compact now"
+            onPress={() => {
+              $.ui.toast('Compacting the conversation…')
+              $.session
+                .compact()
+                .then(() => $.ui.toast('Compacted'))
+                .catch(err => $.ui.toast(`Compact failed: ${String(err)}`))
+            }}
+          />
+          <Button
+            key="ctx-copy"
+            label="Copy figures"
+            onPress={() =>
+              $.ui
+                .copy({
+                  text: [
+                    `Context ${pctText(share(used))}% used (${kilo(used)}/${kilo(max)})`,
+                    ...inUse.map(r => `${r.name}: ${kilo(r.tokens)} (${pctText(share(r.tokens))}%)`),
+                  ].join('\n'),
+                  surface: e.surface,
+                })
+                .then(() => $.ui.toast('Copied'))
+                .catch(() => {})
+            }
+          />
+        </Box>
       </Box>
     )
   })
 
   on('ui.render', { component: 'Pane', requestId: USAGE_PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
-    const [ls, t] = await Promise.all([read($, limits), read($, now)])
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const [ls, t, sound] = await Promise.all([read($, limits), read($, now), read($, soundOn)])
+    const controls = (
+      <Box gap={2} marginTop={1} flexWrap="wrap">
+        <Button key="usage-refresh" label="Refresh" onPress={() => refreshUsage($).catch(() => {})} />
+        <Button key="usage-sound" label={sound ? 'Sound: on' : 'Sound: off'} onPress={() => toggleSound($).catch(() => {})} />
+        <Button key="usage-hide-bar" label="Hide the bar" onPress={() => toggleHidden($).catch(() => {})} />
+      </Box>
+    )
     if (ls.length === 0) {
       return (
-        <Box paddingX={1}>
+        <Box flexDirection="column" paddingX={1}>
           <Text dimColor>Your usage appears after Claude's next reply.</Text>
+          {controls}
         </Box>
       )
     }
@@ -720,6 +785,7 @@ export const register: Register = on => {
             Weekly limits, including Fable, appear here once Claude Code reports them.
           </Text>
         ) : null}
+        {controls}
       </Box>
     )
   })
