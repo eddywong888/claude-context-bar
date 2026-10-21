@@ -1,1 +1,10 @@
-{ "name": "context-bar", "version": "0.1.0", "description": "Context window usage bar with percentage above the prompt", "types": "./types/index.d.ts" }
+{
+  "name": "context-bar",
+  "version": "0.1.0",
+  "description": "A status bar above the prompt: context gauge, 5-hour usage, git, turn time and session age, with Context and Usage panels and ten skins",
+  "author": { "name": "Eddy Wong" },
+  "homepage": "https://github.com/eddywong888/claude-context-bar",
+  "repository": "https://github.com/eddywong888/claude-context-bar",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
