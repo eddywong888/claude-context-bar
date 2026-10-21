@@ -322,6 +322,8 @@ test('early compaction compacts at 90% of the way to the threshold', async ($, o
   tokens = 460_000 // 92% of the way to the 500k threshold
   await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't2' } as never)
   expect(compacted).toBe(1)
+  // The mock compaction left the context nearly full, so early compaction stays off.
+  expect((await pane.find({ key: 'ctx-early' }))?.props.label).toContain(': off')
   await pane.unmount()
 })
 
@@ -470,5 +472,51 @@ test('after a compaction the panel shows the fresh figures', async ($, on) => {
 
   await $.session.compact({ messages: [{ role: 'user', text: 'old', toolUses: [] }] } as never)
   expect(await text()).toContain('8.0%')
+  await pane.unmount()
+})
+
+test('a compaction that helps keeps early compaction on: the hook refreshed the figures', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  let tokens = 460_000
+  on('session.usage', (_$, e) => ({
+    value: {
+      startedAt: 0,
+      context: {
+        tokens,
+        window: 1_000_000,
+        percent: Math.round((tokens / 1_000_000) * 100),
+        breakdown: (e as { breakdown?: string }).breakdown !== undefined
+          ? {
+              categories: [], totalTokens: tokens, maxTokens: 1_000_000, rawMaxTokens: 1_000_000,
+              autocompactSource: 'auto', percentage: 10, gridRows: [], model: 'claude-fable-5',
+              memoryFiles: [], mcpTools: [], agents: [],
+              isAutoCompactEnabled: true, autoCompactThreshold: 500_000,
+            }
+          : undefined,
+      },
+      rateLimits: [],
+    },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('session.compact', () => {
+    tokens = 60_000
+    return { messages: [{ role: 'user', text: 'summary', toolUses: [] }] } as never
+  })
+  const pane = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'context-bar-context',
+    props: { title: 'Context', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
+  })
+  await pane.press({ key: 'ctx-refresh' })
+  await pane.press({ key: 'ctx-early' })
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1' } as never)
+  // Only the hook refreshed after the mod's own compaction; it saw the drop, so the toggle stays on.
+  expect((await pane.find({ key: 'ctx-early' }))?.props.label).toContain(': on')
   await pane.unmount()
 })

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, miniCells, modelName, parseGitStatus, pctText, resetIn, trackCells, turnLength, turnsLeft, usd } from './register'
+import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, hasReset, isFable, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, pctText, resetIn, trackCells, turnLength, turnsLeft, usd } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -180,15 +180,24 @@ test('cost renders sensibly at any size', () => {
   expect(usd(0)).toBe('$0')
 })
 
-test('forecast minutes never go negative with stale samples', () => {
+test('a stale pace raises no alarm', () => {
   const t0 = Date.parse('2026-10-21T10:00:00Z')
   const m = (n: number) => t0 + n * 60000
   const rising = [
     { at: m(0), percent: 80 },
     { at: m(10), percent: 90 },
   ]
-  // Read 30 minutes later with no fresh samples: clamped to ~1m, never negative.
-  expect(forecast(rising, '2026-10-21T12:00:00Z', m(40))).toBe('limit in ~1m')
+  // 40 minutes idle after a burst: no pace, no '~1m' alarm.
+  expect(minutesToLimit(rising, m(50))).toBe(null)
+  expect(forecast(rising, '2026-10-21T12:00:00Z', m(50))).toBe(null)
+  // Still fresh 3 minutes later: the pace counts.
+  expect(minutesToLimit(rising, m(13))).toBe(7)
+})
+
+test('minutes read the same everywhere', () => {
+  expect(minutesText(12)).toBe('12m')
+  expect(minutesText(125)).toBe('2h05m')
+  expect(minutesText(1440 * 2 + 22 * 60)).toBe('2d 22h')
 })
 
 test('themes: three palettes, distinct from the first cell, default untouched', () => {

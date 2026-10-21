@@ -244,15 +244,16 @@ export const duration = (ms: number) => {
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`
 }
 
+/** Whole minutes as "12m", "2h05m" or, past a day, "2d 22h". */
+export const minutesText = (m: number) =>
+  m < 60 ? `${m}m` : m < 24 * 60 ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m` : `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h`
+
 /** Time until an ISO reset moment, as "2h05m" or "12m"; null when unknown or past. */
 export const resetIn = (resetsAt: string | undefined, nowMs: number) => {
   if (resetsAt === undefined || nowMs === 0) return null
   const at = Date.parse(resetsAt)
   if (Number.isNaN(at) || at <= nowMs) return null
-  const m = Math.ceil((at - nowMs) / 60000)
-  if (m < 60) return `${m}m`
-  if (m < 24 * 60) return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`
-  return `${Math.floor(m / 1440)}d ${Math.floor((m % 1440) / 60)}h`
+  return minutesText(Math.ceil((at - nowMs) / 60000))
 }
 
 /** `claude-opus-5-5` → `Opus 5.5`; anything else is shown as given. */
@@ -275,6 +276,9 @@ export const limitName = (kind: string) =>
           ? 'Fable (weekly)'
           : kind.replace(/_/g, ' ')
 
+/** Readings older than this no longer count as the recent pace. */
+const STALE_MS = 10 * 60000
+
 /**
  * Minutes until the 5h limit is used up at the recent pace, from samples at
  * least two minutes apart; null when flat, falling or too few samples.
@@ -285,9 +289,10 @@ export const minutesToLimit = (hist: UsageSample[], nowMs: number): number | nul
   if (first === undefined || last === undefined || last.at - first.at < 2 * 60000) return null
   const perMs = (last.percent - first.percent) / (last.at - first.at)
   if (perMs <= 0 || last.percent >= 100) return null
+  // A pace whose newest reading is old says nothing about now.
+  if (nowMs - last.at > STALE_MS) return null
   const left = Math.ceil((100 - last.percent) / perMs / 60000) + Math.round((last.at - nowMs) / 60000)
-  // Stale samples can date the estimate; never show zero or negative minutes.
-  return Math.max(1, left)
+  return left > 0 ? left : null
 }
 
 /** The forecast line, only when the limit would land before the reset at the recent pace. */
@@ -296,7 +301,7 @@ export const forecast = (hist: UsageSample[], resetsAt: string | undefined, nowM
   if (left === null) return null
   const reset = resetsAt === undefined ? NaN : Date.parse(resetsAt)
   if (Number.isNaN(reset) || nowMs + left * 60000 >= reset) return null
-  return left <= 60 ? `limit in ~${left}m` : `limit in ~${Math.floor(left / 60)}h${String(left % 60).padStart(2, '0')}m`
+  return `limit in ~${minutesText(left)}`
 }
 
 /** Rough turns to the auto-compact point at the average growth of the last turns. */
@@ -334,6 +339,15 @@ export const detailOf = (input: Record<string, unknown>) => {
     }
   }
   return undefined
+}
+
+/** Adds a 5h reading to the pace history; a falling one means the window reset, so the pace starts over. */
+async function recordFive($: EngineInterface, at: number, percent: number) {
+  await update($, fiveHist, hist => {
+    const prev = hist[hist.length - 1]
+    if (prev !== undefined && prev.percent > percent) return [{ at, percent }]
+    return [...hist, { at, percent }].slice(-30)
+  })
 }
 
 async function refreshThreshold($: EngineInterface) {
@@ -388,14 +402,7 @@ async function refreshUsage($: EngineInterface, opts: { checkWindow: boolean } =
   ])
 
   const fiveNow = nextLimits.find(l => l.kind === 'five_hour')
-  if (fiveNow !== undefined) {
-    await update($, fiveHist, hist => {
-      const next = [...hist, { at, percent: fiveNow.percent }]
-      // A falling reading means the window reset: start the pace over.
-      if (next.length >= 2 && (next[next.length - 2]?.percent ?? 0) > fiveNow.percent) return [{ at, percent: fiveNow.percent }]
-      return next.slice(-30)
-    })
-  }
+  if (fiveNow !== undefined) await recordFive($, at, fiveNow.percent)
 
   await checkReset($, at)
 
@@ -499,6 +506,9 @@ async function syncAutoCompact($: EngineInterface) {
   await update($, autoCompactOn, () => stored === true)
 }
 
+/** True while early compaction runs, so the session.compact hook leaves the refresh to it. */
+let selfCompacting = false
+
 /**
  * With early compaction on, compacts once the context is nearly at the
  * auto-compact point. The toggle is turned off before the attempt and turned
@@ -515,7 +525,14 @@ async function maybeCompactEarly($: EngineInterface) {
   $.ui.toast(`Context ${pct}% of the way to auto-compact: compacting now`)
   let helped = false
   try {
-    await $.session.compact()
+    // Refresh here rather than in the session.compact hook, which a mod's own call may skip;
+    // the flag keeps the hook from refreshing a second time.
+    selfCompacting = true
+    try {
+      await $.session.compact()
+    } finally {
+      selfCompacting = false
+    }
     await refreshUsage($, { checkWindow: false })
     const after = await read($, fill)
     const pctAfter = after === null ? null : compactPercent(after.tokens, threshold)
@@ -600,6 +617,8 @@ async function tick($: EngineInterface, me: string, timer: { cancel: () => void 
   const at = await $.clock.now()
   await update($, now, () => at)
   await checkReset($, at)
+  const five = (await read($, limits)).find(l => l.kind === 'five_hour')
+  if (five !== undefined) await recordFive($, at, five.percent)
 }
 
 async function startTick($: EngineInterface) {
@@ -717,7 +736,7 @@ export const register: Register = on => {
   // Any compaction (a panel button, /compact, auto-compaction) refreshes the figures.
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
-    if (e.agentId === undefined) {
+    if (e.agentId === undefined && !selfCompacting) {
       await refreshThreshold($).catch(() => {})
       await refreshUsage($, { checkWindow: false }).catch(() => {})
     }
@@ -1185,11 +1204,7 @@ export const register: Register = on => {
                   ⚠ At the recent pace, the {warn} — before the reset
                 </Text>
               ) : l.kind !== 'five_hour' ? null : mins !== null ? (
-                <Text dimColor>
-                  At the recent pace, the limit lands in ~
-                  {mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h${String(mins % 60).padStart(2, '0')}m`} — after the
-                  reset
-                </Text>
+                <Text dimColor>At the recent pace, the limit lands in ~{minutesText(mins)} — after the reset</Text>
               ) : (
                 <Text dimColor>Pace appears after a few minutes of readings.</Text>
               )}
