@@ -714,6 +714,16 @@ export const register: Register = on => {
     return yield* next(e)
   })
 
+  // Any compaction (a panel button, /compact, auto-compaction) refreshes the figures.
+  on('session.compact', async ($, e, next) => {
+    const result = await next(e)
+    if (e.agentId === undefined) {
+      await refreshThreshold($).catch(() => {})
+      await refreshUsage($, { checkWindow: false }).catch(() => {})
+    }
+    return result
+  })
+
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {
       const at = await $.clock.now().catch(() => null)
@@ -998,7 +1008,15 @@ export const register: Register = on => {
           {headline}
           <Text dimColor>The breakdown appears after Claude's next reply.</Text>
           <Box gap={2} marginTop={1}>
-            <Button key="ctx-refresh" label="Refresh" onPress={() => refreshThreshold($).catch(() => {})} />
+            <Button
+              key="ctx-refresh"
+              label="Refresh"
+              onPress={() =>
+                refreshThreshold($)
+                  .then(() => refreshUsage($, { checkWindow: false }))
+                  .catch(() => {})
+              }
+            />
           </Box>
         </Box>
       )
@@ -1059,7 +1077,16 @@ export const register: Register = on => {
         {section('Room left', spare, true, true)}
         {section('Loaded when needed', later, true, false)}
         <Box gap={2} marginTop={1} flexWrap="wrap">
-          <Button key="ctx-refresh" hotkey="r" label="Refresh" onPress={() => refreshThreshold($).catch(() => {})} />
+          <Button
+            key="ctx-refresh"
+            hotkey="r"
+            label="Refresh"
+            onPress={() =>
+              refreshThreshold($)
+                .then(() => refreshUsage($, { checkWindow: false }))
+                .catch(() => {})
+            }
+          />
           <Button
             key="ctx-compact"
             hotkey="c"

@@ -425,3 +425,50 @@ test('the theme button cycles palettes and /contextbar theme sets one', async ($
   await band.unmount()
   await pane.unmount()
 })
+
+test('after a compaction the panel shows the fresh figures', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  let tokens = 723_000
+  on('session.usage', (_$, e) => ({
+    value: {
+      startedAt: 0,
+      context: {
+        tokens,
+        window: 1_000_000,
+        percent: Math.round((tokens / 1_000_000) * 100),
+        breakdown: (e as { breakdown?: string }).breakdown !== undefined
+          ? {
+              categories: [], totalTokens: tokens, maxTokens: 1_000_000, rawMaxTokens: 1_000_000,
+              autocompactSource: 'auto', percentage: 10, gridRows: [], model: 'claude-fable-5',
+              memoryFiles: [], mcpTools: [], agents: [],
+              isAutoCompactEnabled: true, autoCompactThreshold: 967_000,
+            }
+          : undefined,
+      },
+      rateLimits: [],
+    },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('session.compact', () => {
+    tokens = 80_000 // the summary the conversation shrinks to
+    return { messages: [{ role: 'user', text: 'summary', toolUses: [] }] } as never
+  })
+
+  const pane = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'context-bar-context',
+    props: { title: 'Context', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
+  })
+  await $.tool.call({ tool: 'Read', file_path: '/x' } as never)
+  const text = async () => (await pane.findAll({ type: 'Text' })).map(x => x.text).join('|')
+  expect(await text()).toContain('72.3%')
+
+  await $.session.compact({ messages: [{ role: 'user', text: 'old', toolUses: [] }] } as never)
+  expect(await text()).toContain('8.0%')
+  await pane.unmount()
+})
