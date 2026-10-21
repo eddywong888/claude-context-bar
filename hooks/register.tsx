@@ -926,7 +926,7 @@ export const register: Register = on => {
         {turnMs !== null || elapsed !== null ? (
           <Box gap={1}>
             {turnMs !== null ? <Text dimColor>L:{turnLength(turnMs)}</Text> : null}
-            {elapsed !== null ? <Text dimColor>Total:{elapsed}</Text> : null}
+            {elapsed !== null ? <Text dimColor>Age:{elapsed}</Text> : null}
           </Box>
         ) : null}
         {workGroup}
