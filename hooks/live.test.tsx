@@ -275,7 +275,7 @@ test('a finished answer rings done.wav; the usage panel toggles it off', async (
 })
 
 test('early compaction compacts at 90% of the way to the threshold', async ($, on) => {
-  mock.clock(on)
+  const clock = mock.clock(on)
   mock.store(on)
   let tokens = 100_000
   let compacted = 0
@@ -301,9 +301,9 @@ test('early compaction compacts at 90% of the way to the threshold', async ($, o
   on('agent.list', () => ({ value: [] }) as never)
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
   on('turn.complete', () => ({ text: '' }) as never)
-  on('session.compact', () => {
+  on('command.run', { command: 'compact' }, () => {
     compacted += 1
-    return { messages: [{ role: 'user', text: 'summary', toolUses: [] }] } as never
+    return { text: '' } as never
   })
 
   const pane = await $.ui.mount({
@@ -321,6 +321,7 @@ test('early compaction compacts at 90% of the way to the threshold', async ($, o
 
   tokens = 460_000 // 92% of the way to the 500k threshold
   await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't2' } as never)
+  await clock.advance(600) // early compaction starts just after the turn
   expect(compacted).toBe(1)
   // The mock compaction left the context nearly full, so early compaction stays off.
   expect((await pane.find({ key: 'ctx-early' }))?.props.label).toContain(': off')
@@ -476,7 +477,7 @@ test('after a compaction the panel shows the fresh figures', async ($, on) => {
 })
 
 test('a compaction that helps keeps early compaction on: the hook refreshed the figures', async ($, on) => {
-  mock.clock(on)
+  const clock = mock.clock(on)
   mock.store(on)
   let tokens = 460_000
   on('session.usage', (_$, e) => ({
@@ -502,9 +503,9 @@ test('a compaction that helps keeps early compaction on: the hook refreshed the 
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
   on('turn.complete', () => ({ text: '' }) as never)
   on('ui.toast', () => ({ value: undefined }) as never)
-  on('session.compact', () => {
+  on('command.run', { command: 'compact' }, () => {
     tokens = 60_000
-    return { messages: [{ role: 'user', text: 'summary', toolUses: [] }] } as never
+    return { text: '' } as never
   })
   const pane = await $.ui.mount({
     plugin: 'context-bar',
@@ -516,7 +517,50 @@ test('a compaction that helps keeps early compaction on: the hook refreshed the 
   await pane.press({ key: 'ctx-refresh' })
   await pane.press({ key: 'ctx-early' })
   await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1' } as never)
+  await clock.advance(600)
   // Only the hook refreshed after the mod's own compaction; it saw the drop, so the toggle stays on.
   expect((await pane.find({ key: 'ctx-early' }))?.props.label).toContain(': on')
+  await pane.unmount()
+})
+
+test('Compact now runs /compact, which works in a desktop session', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  const ran: string[] = []
+  on('session.usage', (_$, e) => ({
+    value: {
+      startedAt: 0,
+      context: {
+        tokens: 700_000,
+        window: 1_000_000,
+        percent: 70,
+        breakdown: (e as { breakdown?: string }).breakdown !== undefined
+          ? {
+              categories: [], totalTokens: 700_000, maxTokens: 1_000_000, rawMaxTokens: 1_000_000,
+              autocompactSource: 'auto', percentage: 70, gridRows: [], model: 'claude-opus-5-5',
+              memoryFiles: [], mcpTools: [], agents: [],
+              isAutoCompactEnabled: true, autoCompactThreshold: 967_000,
+            }
+          : undefined,
+      },
+      rateLimits: [],
+    },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+  on('command.run', { command: 'compact' }, (_$, e) => {
+    ran.push((e as { command: string }).command)
+    return { text: '' } as never
+  })
+  const pane = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'context-bar-context',
+    props: { title: 'Context', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
+  })
+  await pane.press({ key: 'ctx-refresh' })
+  await pane.press({ key: 'ctx-compact' })
+  expect(ran).toEqual(['compact'])
   await pane.unmount()
 })

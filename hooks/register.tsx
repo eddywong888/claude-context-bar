@@ -510,6 +510,22 @@ async function syncAutoCompact($: EngineInterface) {
 let selfCompacting = false
 
 /**
+ * Compacts by running /compact as if typed. $.session.compact is not available
+ * in a desktop (SDK) session, and the command queues until the session is idle.
+ */
+async function runCompact($: EngineInterface) {
+  await $.command.run({ command: 'compact', args: '' })
+}
+
+/** The panel and bar buttons: a toast now, another when it ends. */
+function compactNow($: EngineInterface) {
+  $.ui.toast('Compacting the conversation…')
+  runCompact($)
+    .then(() => $.ui.toast('Compacted'))
+    .catch(err => $.ui.toast(`Compact failed: ${String(err)}`))
+}
+
+/**
  * With early compaction on, compacts once the context is nearly at the
  * auto-compact point. The toggle is turned off before the attempt and turned
  * back on only when compaction succeeded and actually lowered the context, so
@@ -523,13 +539,20 @@ async function maybeCompactEarly($: EngineInterface) {
   if (pct === null || pct < EARLY_COMPACT_AT) return
   await update($, autoCompactOn, () => false)
   $.ui.toast(`Context ${pct}% of the way to auto-compact: compacting now`)
+  // A command cannot run inside the turn that is ending; start it a moment after.
+  $.clock.after(500, () => {
+    compactEarly($, threshold).catch(() => {})
+  })
+}
+
+async function compactEarly($: EngineInterface, threshold: number | null) {
   let helped = false
   try {
     // Refresh here rather than in the session.compact hook, which a mod's own call may skip;
     // the flag keeps the hook from refreshing a second time.
     selfCompacting = true
     try {
-      await $.session.compact()
+      await runCompact($)
     } finally {
       selfCompacting = false
     }
@@ -964,13 +987,7 @@ export const register: Register = on => {
           <Button
             key="bar-compact"
             label="Compact"
-            onPress={() => {
-              $.ui.toast('Compacting the conversation…')
-              $.session
-                .compact()
-                .then(() => $.ui.toast('Compacted'))
-                .catch(err => $.ui.toast(`Compact failed: ${String(err)}`))
-            }}
+            onPress={() => compactNow($)}
           />
         ) : null}
         <Button key="hide" label="Hide" onPress={() => toggleHidden($)} />
@@ -1110,13 +1127,7 @@ export const register: Register = on => {
             key="ctx-compact"
             hotkey="c"
             label="Compact now"
-            onPress={() => {
-              $.ui.toast('Compacting the conversation…')
-              $.session
-                .compact()
-                .then(() => $.ui.toast('Compacted'))
-                .catch(err => $.ui.toast(`Compact failed: ${String(err)}`))
-            }}
+            onPress={() => compactNow($)}
           />
           <Button
             key="ctx-early"
