@@ -11,6 +11,9 @@ test('auto-compact share', () => {
 test('session length', () => {
   expect(duration(12 * 60000)).toBe('12m')
   expect(duration(75 * 60000)).toBe('1h15m')
+  expect(duration((23 * 60 + 59) * 60000)).toBe('23h59m')
+  expect(duration(24 * 60 * 60000)).toBe('1d00h00m')
+  expect(duration((35 * 60 + 52) * 60000)).toBe('1d11h52m')
 })
 
 test('tool detail picks the first useful argument, trimmed', () => {

@@ -239,9 +239,12 @@ export const turnLength = (ms: number) => {
 export const countdownColor = (percent: number) =>
   percent >= 80 ? 'error' : percent >= 50 ? 'warning' : 'suggestion'
 
+/** Session age as "12m", "1h15m" or, past a day, "1d11h52m". */
 export const duration = (ms: number) => {
   const m = Math.max(0, Math.floor(ms / 60000))
-  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`
+  if (m < 60) return `${m}m`
+  if (m < 1440) return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`
+  return `${Math.floor(m / 1440)}d${String(Math.floor((m % 1440) / 60)).padStart(2, '0')}h${String(m % 60).padStart(2, '0')}m`
 }
 
 /** Whole minutes as "12m", "2h05m" or, past a day, "2d 22h". */
