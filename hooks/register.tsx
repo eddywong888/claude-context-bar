@@ -175,7 +175,9 @@ export const minutesToLimit = (hist: UsageSample[], nowMs: number): number | nul
   if (first === undefined || last === undefined || last.at - first.at < 2 * 60000) return null
   const perMs = (last.percent - first.percent) / (last.at - first.at)
   if (perMs <= 0 || last.percent >= 100) return null
-  return Math.ceil((100 - last.percent) / perMs / 60000) + Math.round((last.at - nowMs) / 60000)
+  const left = Math.ceil((100 - last.percent) / perMs / 60000) + Math.round((last.at - nowMs) / 60000)
+  // Stale samples can date the estimate; never show zero or negative minutes.
+  return Math.max(1, left)
 }
 
 /** The forecast line, only when the limit would land before the reset at the recent pace. */
@@ -271,7 +273,8 @@ async function refreshUsage($: EngineInterface, opts: { checkWindow: boolean } =
     update($, limits, prev => (nextLimits.length > 0 ? nextLimits : prev)),
     update($, startedAt, () => usage.startedAt),
     update($, now, () => at),
-    update($, costUsd, () => usage.cost?.usd ?? null),
+    // A reading without a cost keeps the last one, as the limits write does.
+    update($, costUsd, prev => usage.cost?.usd ?? prev),
   ])
 
   const fiveNow = nextLimits.find(l => l.kind === 'five_hour')
@@ -386,20 +389,35 @@ async function syncAutoCompact($: EngineInterface) {
   await update($, autoCompactOn, () => stored === true)
 }
 
-/** With early compaction on, compacts once the context is nearly at the auto-compact point. */
+/**
+ * With early compaction on, compacts once the context is nearly at the
+ * auto-compact point. The toggle is turned off before the attempt and turned
+ * back on only when compaction succeeded and actually lowered the context, so
+ * a failing or ineffective compaction cannot retry every turn; and only when
+ * nobody flipped the stored setting while it ran, so a mid-run choice stands.
+ */
 async function maybeCompactEarly($: EngineInterface) {
   if (!(await read($, autoCompactOn))) return
   const [f, threshold] = await Promise.all([read($, fill), read($, compactAt)])
   const pct = f === null ? null : compactPercent(f.tokens, threshold)
   if (pct === null || pct < EARLY_COMPACT_AT) return
-  // Turn it off before compacting, so a failure cannot loop.
   await update($, autoCompactOn, () => false)
   $.ui.toast(`Context ${pct}% of the way to auto-compact: compacting now`)
+  let helped = false
   try {
     await $.session.compact()
-    $.ui.toast('Compacted')
-  } finally {
+    await refreshUsage($, { checkWindow: false })
+    const after = await read($, fill)
+    const pctAfter = after === null ? null : compactPercent(after.tokens, threshold)
+    helped = pctAfter !== null && pctAfter < EARLY_COMPACT_AT
+    $.ui.toast(helped ? 'Compacted' : 'Compacted, but the context is still nearly full; early compaction is off')
+  } catch (err) {
+    $.ui.toast(`Compact failed: ${String(err)}; early compaction is off`)
+  }
+  if (helped && (await $.store.get('autoCompactOn').catch(() => true)) !== false) {
     await update($, autoCompactOn, () => true)
+  } else if (!helped) {
+    await $.store.set('autoCompactOn', false).catch(() => {})
   }
 }
 
@@ -496,6 +514,8 @@ export const register: Register = on => {
         update($, toolsTurn, n => n + 1),
         update($, toolsTotal, n => n + 1),
       ])
+    } else {
+      await update($, toolsTotal, n => n + 1).catch(() => {})
     }
     try {
       return await next(e)
@@ -518,7 +538,7 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'contextbar' }, async ($, e) => {
-    const want = e.args.trim().toLowerCase()
+    const want = e.args.trim().toLowerCase().split(/\s+/).join(' ')
     if (want === 'hide' || want === 'show') {
       await update($, isHidden, () => want === 'hide')
       await $.store.set('isHidden', want === 'hide').catch(() => {})
@@ -539,6 +559,7 @@ export const register: Register = on => {
     const [hidden, sound, early] = await Promise.all([read($, isHidden), read($, soundOn), read($, autoCompactOn)])
     return {
       text: [
+        ...(want !== '' ? [`Didn't understand “${want}”.`] : []),
         `Context bar: ${hidden ? 'collapsed' : 'expanded'} · sound ${sound ? 'on' : 'off'} · early compact ${early ? 'on' : 'off'}`,
         'Usage: /contextbar show | hide | sound on | sound off | early on | early off',
       ].join('\n'),
@@ -592,11 +613,9 @@ export const register: Register = on => {
       if (e.reason === 'answer') ringDone($).catch(() => {})
       const f2 = await read($, fill).catch(() => null)
       if (f2 !== null) {
-        await update($, tokHist, hist => [...hist, f2.tokens].slice(-8)).catch(() => {})
-        await update($, lastGrowth, () => null).catch(() => {})
-        const hist = await read($, tokHist).catch(() => [] as number[])
+        const hist = await update($, tokHist, old => [...old, f2.tokens].slice(-8)).catch(() => [] as number[])
         const prev = hist[hist.length - 2]
-        if (prev !== undefined) await update($, lastGrowth, () => f2.tokens - prev).catch(() => {})
+        await update($, lastGrowth, () => (prev !== undefined ? f2.tokens - prev : null)).catch(() => {})
       }
       await syncAutoCompact($).catch(() => {})
       await maybeCompactEarly($).catch(() => {})
@@ -883,7 +902,7 @@ export const register: Register = on => {
           <Box flexGrow={1} height={1} backgroundColor="inactive" />
         </Box>
         <Text dimColor>
-          Tools: {nTurn} this turn, {nTotal} this session
+          Tools: {nTurn} this turn (main), {nTotal} this session incl. subagents
           {Object.keys(byModel).length > 0
             ? ` · steps: ${Object.entries(byModel)
                 .map(([m, n]) => `${modelName(m)} ${n}`)

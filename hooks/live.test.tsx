@@ -323,3 +323,61 @@ test('early compaction compacts at 90% of the way to the threshold', async ($, o
   expect(compacted).toBe(1)
   await pane.unmount()
 })
+
+test('/contextbar flips the sound with sloppy spacing; unknown args say so', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { tokens: 1, window: 200_000, percent: 0 }, rateLimits: [] },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  const off = await $.command.run({ command: 'contextbar', args: '  Sound   OFF ' } as never)
+  expect(off.text).toBe('Completion sound off.')
+  const huh = await $.command.run({ command: 'contextbar', args: 'louder' } as never)
+  expect(huh.text).toContain('understand')
+  const status = await $.command.run({ command: 'contextbar', args: '' } as never)
+  expect(status.text).toContain('sound off')
+})
+
+test('the bar grows a Compact button once 70% of the way to auto-compact', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  let tokens = 100_000
+  on('session.usage', (_$, e) => ({
+    value: {
+      startedAt: 0,
+      context: {
+        tokens,
+        window: 1_000_000,
+        percent: Math.round((tokens / 1_000_000) * 100),
+        breakdown: (e as { breakdown?: string }).breakdown !== undefined
+          ? {
+              categories: [], totalTokens: tokens, maxTokens: 1_000_000, rawMaxTokens: 1_000_000,
+              autocompactSource: 'auto', percentage: 10, gridRows: [], model: 'claude-fable-5',
+              memoryFiles: [], mcpTools: [], agents: [],
+              isAutoCompactEnabled: true, autoCompactThreshold: 500_000,
+            }
+          : undefined,
+      },
+      rateLimits: [],
+    },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
+
+  const ui = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'desktop',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 200 } as never,
+  })
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 'a' } as never)
+  expect(await ui.find({ key: 'bar-compact' })).toBe(undefined) // 100k of 500k: 20%
+
+  tokens = 400_000 // 80% of the way to the threshold
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 'b' } as never)
+  expect(await ui.find({ key: 'bar-compact' })).toBeDefined()
+  await ui.unmount()
+})

@@ -179,3 +179,14 @@ test('cost renders sensibly at any size', () => {
   expect(usd(0.0042)).toBe('$0.0042')
   expect(usd(0)).toBe('$0')
 })
+
+test('forecast minutes never go negative with stale samples', () => {
+  const t0 = Date.parse('2026-10-21T10:00:00Z')
+  const m = (n: number) => t0 + n * 60000
+  const rising = [
+    { at: m(0), percent: 80 },
+    { at: m(10), percent: 90 },
+  ]
+  // Read 30 minutes later with no fresh samples: clamped to ~1m, never negative.
+  expect(forecast(rising, '2026-10-21T12:00:00Z', m(40))).toBe('limit in ~1m')
+})
