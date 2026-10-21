@@ -206,7 +206,7 @@ test('minutes read the same everywhere', () => {
 })
 
 test('themes: three palettes, distinct from the first cell, default untouched', () => {
-  expect(THEME_NAMES).toEqual(['meadow', 'ocean', 'ember', 'hermes', 'mono', 'retro', 'cyberpunk'])
+  expect(THEME_NAMES).toEqual(['meadow', 'ocean', 'ember', 'hermes', 'mono', 'retro', 'cyberpunk', 'latte', 'blueprint', 'sumi'])
   expect(gradientAt(0)).toBe('#117a2e') // default stays meadow
   expect(gradientAt(0, THEMES['ocean'])).toBe('#0e7490')
   expect(gradientAt(1, THEMES['ocean'])).toBe('#be185d')
@@ -219,4 +219,10 @@ test('skins change the glyphs too', () => {
   expect(retro.map(c => c.ch).join('')).toBe('██████...|...')
   expect(dotCells(40, THEMES['hermes']).map(c => c.ch).join('')).toBe('●●···')
   expect(miniCells(60, THEMES['mono']).map(c => c.ch).join('')).toBe('◼◼◼◻◻')
+  expect(trackCells(50, 12, WARN_AT, THEMES['latte']).map(c => c.ch).join('')).toBe('▆▆▆▆▆▆▁▁▁│▁▁▁')
+  expect(trackCells(50, 12, WARN_AT, THEMES['blueprint']).map(c => c.ch).join('')).toBe('▮▮▮▮▮▮┄┄┄╎┄┄┄')
+  expect(dotCells(40, THEMES['blueprint']).map(c => c.ch).join('')).toBe('◆◆◇◇◇')
+  expect(THEMES['blueprint']!.deco('Context')).toBe('┤Context├')
+  expect(miniCells(60, THEMES['sumi']).map(c => c.ch).join('')).toBe('━━━──')
+  expect(gradientAt(1, THEMES['sumi'])).toBe('#c0392b') // full reads as the seal
 })

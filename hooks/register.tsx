@@ -160,6 +160,48 @@ export const THEMES: Record<string, Palette> = {
     deco: label => `▸${label}`,
     labelInk: '#00c2d1',
   },
+  // A cup filling: short blocks rise to tall ones, milky caramel darkening to espresso.
+  latte: {
+    stops: [
+      [0xb0, 0x83, 0x4a],
+      [0x8b, 0x5a, 0x2b],
+      [0x3b, 0x24, 0x16],
+    ],
+    track: '#e2d6c4',
+    trackDots: '#c4ab8c',
+    notch: '#6f4e37',
+    glyphs: { fill: '▆', empty: '▁', dotOn: '●', dotOff: '○', miniOn: '▆', miniOff: '▁', marker: '│' },
+    deco: label => label,
+    labelInk: '#8b5a2b',
+  },
+  // A drafting sheet: solid cells on a dashed dimension line, labels set between ticks.
+  blueprint: {
+    stops: [
+      [0x02, 0x84, 0xc7],
+      [0x1d, 0x4e, 0xd8],
+      [0x1e, 0x1b, 0x4b],
+    ],
+    track: '#c3d4e6',
+    trackDots: '#7fa3c8',
+    notch: '#0b3d91',
+    glyphs: { fill: '▮', empty: '┄', dotOn: '◆', dotOff: '◇', miniOn: '▮', miniOff: '▯', marker: '╎' },
+    deco: label => `┤${label}├`,
+    labelInk: '#1d4ed8',
+  },
+  // A brush stroke: a heavy line over a hairline, slate wash into ink, sealed in vermilion when full.
+  sumi: {
+    stops: [
+      [0x7c, 0x8a, 0x9e],
+      [0x2b, 0x34, 0x45],
+      [0xc0, 0x39, 0x2b],
+    ],
+    track: '#d9dcdf',
+    trackDots: '#aab1ba',
+    notch: '#c0392b',
+    glyphs: { fill: '━', empty: '─', dotOn: '●', dotOff: '◦', miniOn: '━', miniOff: '─', marker: '┃' },
+    deco: label => label.toLowerCase(),
+    labelInk: '#2b3445',
+  },
 }
 
 export const THEME_NAMES = Object.keys(THEMES)
