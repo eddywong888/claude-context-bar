@@ -382,7 +382,7 @@ const STALE_MS = 10 * 60000
  */
 export const minutesToLimit = (hist: UsageSample[], nowMs: number): number | null => {
   const last = hist[hist.length - 1]
-  const first = hist.find(h => last !== undefined && last.at - h.at >= 2 * 60000) ?? hist[0]
+  const first = hist.find(s => last !== undefined && last.at - s.at >= 2 * 60000) ?? hist[0]
   if (first === undefined || last === undefined || last.at - first.at < 2 * 60000) return null
   const perMs = (last.percent - first.percent) / (last.at - first.at)
   if (perMs <= 0 || last.percent >= 100) return null
