@@ -805,9 +805,7 @@ async function startTick($: EngineInterface) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    await $.command
-      .register({ name: 'contextbar', description: 'Context bar: show, hide, sound and early compaction' })
-      .catch(() => {})
+    await $.command.register({ name: 'contextbar', description: 'Context bar: show, hide, sound and early compaction' }).catch(() => {})
     await Promise.all([
       refreshThreshold($)
         .then(() => refreshUsage($, { checkWindow: false }))
@@ -914,13 +912,16 @@ export const register: Register = on => {
 
   // A typed /compact or /clear. Another plugin may pass session.compact on past
   // this mod's hook, so the command is watched too.
-  for (const command of ['compact', 'clear']) {
-    on('command.run', { command }, async ($, e, next) => {
-      const result = await next(e)
-      await afterShrink($)
-      return result
-    })
-  }
+  on('command.run', { command: 'compact' }, async ($, e, next) => {
+    const result = await next(e)
+    await afterShrink($)
+    return result
+  })
+  on('command.run', { command: 'clear' }, async ($, e, next) => {
+    const result = await next(e)
+    await afterShrink($)
+    return result
+  })
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {
@@ -1310,14 +1311,13 @@ export const register: Register = on => {
             key="ctx-copy"
             label="Copy figures"
             onPress={() =>
-              $.ui
-                .copy({
-                  text: [
-                    `Context ${pctText(share(used))}% used (${kilo(used)}/${kilo(max)})`,
-                    ...inUse.map(r => `${r.name}: ${kilo(r.tokens)} (${pctText(share(r.tokens))}%)`),
-                  ].join('\n'),
-                  surface: e.surface,
-                })
+              $.ui.copy({
+                text: [
+                  `Context ${pctText(share(used))}% used (${kilo(used)}/${kilo(max)})`,
+                  ...inUse.map(r => `${r.name}: ${kilo(r.tokens)} (${pctText(share(r.tokens))}%)`),
+                ].join('\n'),
+                surface: e.surface,
+              })
                 .then(() => $.ui.toast('Copied'))
                 .catch(() => {})
             }
@@ -1377,8 +1377,7 @@ export const register: Register = on => {
           label="Clear chat"
           onPress={() => {
             $.ui.toast('Clearing the conversation…')
-            $.command
-              .run({ command: 'clear' })
+            $.command.run({ command: 'clear' })
               .then(() => afterShrink($))
               .catch(err => $.ui.toast(`Clear failed: ${String(err)}`))
           }}
