@@ -1,5 +1,6 @@
 {
   "name": "claude-context-bar",
+  "description": "A status bar above the Claude Code prompt for context fill, 5-hour usage, git and session time, with Context and Usage panels.",
   "owner": {
     "name": "Eddy Wong"
   },
