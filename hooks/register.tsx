@@ -277,7 +277,7 @@ const MINI = 5
 /** A five-cell gauge: lit cells (▰ for bars, ● for dots) and the unlit rest. */
 export const mini = (percent: number, lit: string, unlit: string) => {
   const f = Math.min(MINI, Math.max(0, Math.ceil((percent / 100) * MINI)))
-  return { on: lit.repeat(f), off: unlit.repeat(MINI - f) }
+  return { filled: lit.repeat(f), empty: unlit.repeat(MINI - f) }
 }
 
 /** Where the early-warning line sits on the context bar, as a share of the window. */
@@ -308,14 +308,14 @@ export const trackCells = (percent: number, width: number, warnPercent: number |
 
 /** The hidden view's five-cell gauge: ▰ lit in the gradient, ▱ unlit. */
 export const miniCells = (percent: number, pal: Palette = THEMES['meadow']!) => {
-  const { on, off } = mini(percent, pal.glyphs.miniOn, pal.glyphs.miniOff)
-  return [...gradientCells(on, 0, MINI, pal), ...[...off].map(ch => ({ ch, color: pal.track }))]
+  const { filled, empty } = mini(percent, pal.glyphs.miniOn, pal.glyphs.miniOff)
+  return [...gradientCells(filled, 0, MINI, pal), ...[...empty].map(ch => ({ ch, color: pal.track }))]
 }
 
 /** Five dots for the 5h window: lit ones in the gradient, the rest as rings. */
 export const dotCells = (percent: number, pal: Palette = THEMES['meadow']!) => {
-  const { on, off } = mini(percent, pal.glyphs.dotOn, pal.glyphs.dotOff)
-  return [...gradientCells(on, 0, MINI, pal), ...[...off].map(ch => ({ ch, color: pal.track }))]
+  const { filled, empty } = mini(percent, pal.glyphs.dotOn, pal.glyphs.dotOff)
+  return [...gradientCells(filled, 0, MINI, pal), ...[...empty].map(ch => ({ ch, color: pal.track }))]
 }
 
 export const isFable = (kind: string) => /fable/i.test(kind)
@@ -506,13 +506,13 @@ async function refreshUsage($: EngineInterface, opts: { checkWindow: boolean } =
   // Ask for the breakdown only when the plain figures cannot be trusted; it costs more.
   const usage = contextShrank || plain.context.tokens === undefined ? await $.session.usage({ breakdown: 'summary' }).catch(() => plain) : plain
   const { context } = usage
-  const next = fillFrom(context, context.breakdown?.totalTokens ?? null, contextShrank)
+  const filled = fillFrom(context, context.breakdown?.totalTokens ?? null, contextShrank)
   const nextLimits: Limit[] = clearPassedResets(
     usage.rateLimits.map(l => ({ kind: l.kind, percent: Math.round(l.percentUsed), resetsAt: l.resetsAt })),
     at,
   )
   await Promise.all([
-    update($, fill, () => next),
+    update($, fill, () => filled),
     // A response without rate-limit headers reports none; keep the last reading.
     update($, limits, prev => (nextLimits.length > 0 ? nextLimits : prev)),
     update($, startedAt, () => usage.startedAt),
@@ -527,10 +527,10 @@ async function refreshUsage($: EngineInterface, opts: { checkWindow: boolean } =
   await checkReset($, at)
 
   // A new window (model or setting change) moves the auto-compact point.
-  if (opts.checkWindow && next !== null && prev !== null && prev.window !== next.window) await refreshThreshold($)
+  if (opts.checkWindow && filled !== null && prev !== null && prev.window !== filled.window) await refreshThreshold($)
 
   const threshold = await read($, compactAt)
-  const pct = next === null ? null : compactPercent(next.tokens, threshold)
+  const pct = filled === null ? null : compactPercent(filled.tokens, threshold)
   const isHigh = pct !== null && pct >= COMPACT_WARN
   let crossed = false
   await update($, warned, was => {
@@ -605,9 +605,9 @@ async function ringDone($: EngineInterface) {
 }
 
 async function toggleSound($: EngineInterface) {
-  const next = await update($, soundOn, was => !was)
-  await $.store.set('soundOn', next).catch(() => {})
-  if (next) ringDone($).catch(() => {})
+  const enabled = await update($, soundOn, was => !was)
+  await $.store.set('soundOn', enabled).catch(() => {})
+  if (enabled) ringDone($).catch(() => {})
 }
 
 async function syncSound($: EngineInterface) {
@@ -616,9 +616,9 @@ async function syncSound($: EngineInterface) {
 }
 
 async function toggleAutoCompact($: EngineInterface) {
-  const next = await update($, autoCompactOn, was => !was)
-  await $.store.set('autoCompactOn', next).catch(() => {})
-  $.ui.toast(next ? `Will compact at ${EARLY_COMPACT_AT}% of the way to auto-compact` : 'Early compaction off')
+  const enabled = await update($, autoCompactOn, was => !was)
+  await $.store.set('autoCompactOn', enabled).catch(() => {})
+  $.ui.toast(enabled ? `Will compact at ${EARLY_COMPACT_AT}% of the way to auto-compact` : 'Early compaction off')
 }
 
 async function syncAutoCompact($: EngineInterface) {
@@ -737,8 +737,8 @@ async function syncTheme($: EngineInterface) {
 }
 
 async function toggleHidden($: EngineInterface) {
-  const next = await update($, isHidden, was => !was)
-  await $.store.set('isHidden', next).catch(() => {})
+  const hidden = await update($, isHidden, was => !was)
+  await $.store.set('isHidden', hidden).catch(() => {})
 }
 
 /** Reads `git status --porcelain=v2 --branch`: the branch, files changed, and commits ahead/behind. */
@@ -766,9 +766,9 @@ async function refreshGit($: EngineInterface) {
   const res = await $.process.run(['git', '--no-optional-locks', 'status', '--porcelain=v2', '--branch'], {
     timeoutMs: 3000,
   })
-  const next = res.exitCode === 0 ? parseGitStatus(res.stdout) : null
+  const status = res.exitCode === 0 ? parseGitStatus(res.stdout) : null
   const at = await $.clock.now()
-  await Promise.all([update($, git, () => next), update($, gitAt, () => at)])
+  await Promise.all([update($, git, () => status), update($, gitAt, () => at)])
 }
 
 /** Reads git after a file-changing tool, at most once per GIT_EVERY_MS. */
@@ -780,8 +780,8 @@ async function refreshGitSoon($: EngineInterface) {
 
 async function refreshAgents($: EngineInterface) {
   const list = await $.agent.list()
-  const next = list.filter(a => ACTIVE.includes(a.status)).map(a => a.name ?? a.type)
-  await update($, agents, () => next)
+  const names = list.filter(a => ACTIVE.includes(a.status)).map(a => a.name ?? a.type)
+  await update($, agents, () => names)
 }
 
 async function tick($: EngineInterface, me: string, timer: { cancel: () => void }) {

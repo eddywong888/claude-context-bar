@@ -87,6 +87,9 @@ Everything stays on your machine. The mod makes no network requests.
 
 Its hooks on tool calls, commands, subagent spawns and compaction pass every event on unchanged and only refresh the figures afterwards. The mod never blocks, changes, approves or denies anything, and it doesn't touch permission modes or settings.
 
+- The `command.run` hook for `/contextbar` answers the mod's own command (show, hide, sound, early, theme). The `command.run` hooks for `/compact` and `/clear` let the command run as typed, then re-read the context size.
+- The `agent.spawn` hook lets the subagent start unchanged, with its own prompt, tools and permission mode, then updates the list of running subagents shown on the bar.
+
 ## Develop
 
 ```bash

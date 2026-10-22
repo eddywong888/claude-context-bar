@@ -75,10 +75,10 @@ test('reset detection', () => {
 })
 
 test('mini gauges light at least one cell for any usage', () => {
-  expect(mini(24, '▰', '▱')).toEqual({ on: '▰▰', off: '▱▱▱' })
-  expect(mini(4, '●', '○')).toEqual({ on: '●', off: '○○○○' })
-  expect(mini(0, '●', '○').on).toBe('')
-  expect(mini(100, '▰', '▱').off).toBe('')
+  expect(mini(24, '▰', '▱')).toEqual({ filled: '▰▰', empty: '▱▱▱' })
+  expect(mini(4, '●', '○')).toEqual({ filled: '●', empty: '○○○○' })
+  expect(mini(0, '●', '○').filled).toBe('')
+  expect(mini(100, '▰', '▱').empty).toBe('')
 })
 
 test('git status parsing', () => {
