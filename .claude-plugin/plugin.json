@@ -1,7 +1,7 @@
 {
   "name": "context-bar",
   "displayName": "Context Bar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A status bar above the prompt: context gauge, 5-hour usage, git, turn time and session age, with Context and Usage panels and ten skins",
   "keywords": [
     "status bar",
