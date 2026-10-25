@@ -1,8 +1,20 @@
 {
   "name": "context-bar",
+  "displayName": "Context Bar",
   "version": "0.1.0",
   "description": "A status bar above the prompt: context gauge, 5-hour usage, git, turn time and session age, with Context and Usage panels and ten skins",
-  "author": { "name": "Eddy Wong" },
+  "keywords": [
+    "status bar",
+    "context",
+    "usage",
+    "tokens",
+    "git",
+    "compaction",
+    "themes"
+  ],
+  "author": {
+    "name": "Eddy Wong"
+  },
   "homepage": "https://github.com/eddywong888/claude-context-bar",
   "repository": "https://github.com/eddywong888/claude-context-bar",
   "license": "MIT",
