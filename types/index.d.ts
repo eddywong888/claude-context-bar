@@ -6,6 +6,10 @@ export type BreakdownRow = { name: string; tokens: number; color: string; isDefe
 export type Breakdown = { rows: BreakdownRow[]; total: number; max: number; model: string }
 export type UsageSample = { at: number; percent: number }
 export type RunningTool = { id: string; tool: string; detail?: string }
+/** A sidebar group as the user names it for the bar: a coloured mark such as 🟦 and a name. */
+export type GroupTag = { mark: string; name: string }
+/** The session's folder, the name the bar shows for it, and the group the user tied it to. */
+export type Place = { path: string; folder: string; group: GroupTag | null }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -37,6 +41,7 @@ declare module 'claude-code' {
       git: GitInfo | null
       gitAt: number | null
       breakdown: Breakdown | null
+      place: Place | null
     }
   }
 }

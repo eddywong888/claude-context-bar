@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, fillFrom, hasReset, inksOf, isFable, isTheme, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
+import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, fillFrom, folderOf, groupFor, hasReset, inksOf, isFable, isTheme, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, parseGroup, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -266,4 +266,25 @@ test('after a compaction the fill comes from the breakdown until the next reply'
   // Just compacted, the usage figures are absent: the breakdown fills in rather than 0%.
   expect(fillFrom({ window: 1_000_000 }, 124_000, false)?.tokens).toBe(124_000)
   expect(fillFrom({ window: 1_000_000 }, null, false)).toBe(null)
+})
+
+test('folderOf names the folder, or the project for a worktree', () => {
+  expect(folderOf('/Users/me/Codex/sites')).toBe('sites')
+  expect(folderOf('/Users/me/Codex/sites/')).toBe('sites')
+  expect(folderOf('/Users/me/wow-merid/.claude/worktrees/clever-mendeleev-d381a5')).toBe('wow-merid')
+})
+
+test('groupFor picks the nearest tied folder above the path', () => {
+  const groups = { '/a/wows': { mark: '🟧', name: 'wows' }, '/a/wows/theme': { mark: '🟥', name: 'theme' } }
+  expect(groupFor('/a/wows', groups)?.name).toBe('wows')
+  expect(groupFor('/a/wows/other', groups)?.name).toBe('wows')
+  expect(groupFor('/a/wows/theme/.claude/worktrees/x', groups)?.name).toBe('theme')
+  expect(groupFor('/a/wowsy', groups)).toBeNull()
+})
+
+test('parseGroup splits the mark from the name', () => {
+  expect(parseGroup('🟦 sites / ops')).toEqual({ mark: '🟦', name: 'sites / ops' })
+  expect(parseGroup('wows')).toEqual({ mark: '📁', name: 'wows' })
+  expect(parseGroup('🟦')).toBeNull()
+  expect(parseGroup('  ')).toBeNull()
 })

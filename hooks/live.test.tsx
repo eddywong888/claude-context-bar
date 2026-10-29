@@ -749,3 +749,36 @@ test('a typed /compact redraws from the breakdown, marked ~, until the next repl
   expect((await band.find({ key: 'open-context' }))?.props.label).toBe('67.7%') // the reply's own figure again
   await band.unmount()
 })
+
+test('the band shows the folder, and the group the user ties it to', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { tokens: 50_000, window: 200_000, percent: 25 }, rateLimits: [] },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('process.run', (_$, e) =>
+    ({
+      value: (e as { argv: string[] }).argv?.[0] === 'pwd'
+        ? { exitCode: 0, stdout: '/Users/me/Codex/sites\n', stderr: '' }
+        : { exitCode: 1, stdout: '', stderr: '' },
+    }) as never,
+  )
+  const ui = await $.ui.mount({ plugin: 'context-bar', surface: 'terminal', component: 'AbovePrompt', props: PROPS })
+  const text = async () => (await ui.findAll({ type: 'Text' })).map(t => t.text).join('|')
+
+  const before = await $.command.run({ command: 'contextbar', args: 'group' } as never)
+  expect(JSON.stringify(before)).toContain('/Users/me/Codex/sites')
+  expect(JSON.stringify(before)).toContain('Group: none')
+  expect(await text()).toContain('📁')
+  expect(await text()).toContain('sites')
+
+  await $.command.run({ command: 'contextbar', args: 'group 🟦 Sites / Ops' } as never)
+  expect(await text()).toContain('🟦')
+  const after = await $.command.run({ command: 'contextbar', args: 'group' } as never)
+  expect(JSON.stringify(after)).toContain('🟦 Sites / Ops')
+
+  await $.command.run({ command: 'contextbar', args: 'group off' } as never)
+  expect(await text()).not.toContain('🟦')
+  await ui.unmount()
+})

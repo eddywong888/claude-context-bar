@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Breakdown, ContextFill, GitInfo, Limit, RunningTool, UsageSample } from '../types'
+import type { Breakdown, ContextFill, GitInfo, GroupTag, Limit, RunningTool, UsageSample } from '../types'
 
 const fill = atom({ plugin: 'context-bar', key: 'fill' } as const, null)
 const compactAt = atom({ plugin: 'context-bar', key: 'compactAt' } as const, null)
@@ -30,6 +30,7 @@ const stepsByModel = atom({ plugin: 'context-bar', key: 'stepsByModel' } as cons
 const themeName = atom({ plugin: 'context-bar', key: 'themeName' } as const, 'meadow')
 const soundOn = atom({ plugin: 'context-bar', key: 'soundOn' } as const, true)
 const tickOwner = atom({ plugin: 'context-bar', key: 'tickOwner' } as const, null)
+const place = atom({ plugin: 'context-bar', key: 'place' } as const, null)
 
 const CONTEXT_PANE = 'context-bar-context'
 const USAGE_PANE = 'context-bar-usage'
@@ -741,6 +742,59 @@ async function toggleHidden($: EngineInterface) {
   await $.store.set('isHidden', hidden).catch(() => {})
 }
 
+/** The name the bar shows for a folder: its last part, or the project's for a worktree under .claude/worktrees. */
+export const folderOf = (path: string) => {
+  const parts = path.replace(/\/+$/, '').split('/')
+  const wt = parts.lastIndexOf('worktrees')
+  const at = wt > 1 && parts[wt - 1] === '.claude' ? wt - 2 : parts.length - 1
+  return parts[at] || path
+}
+
+/** The group tied to this folder or the nearest folder above it, so subfolders and worktrees share it. */
+export const groupFor = (path: string, groups: Record<string, GroupTag>): GroupTag | null => {
+  let best: string | null = null
+  for (const key of Object.keys(groups)) {
+    if ((path === key || path.startsWith(`${key}/`)) && (best === null || key.length > best.length)) best = key
+  }
+  return best === null ? null : groups[best]!
+}
+
+/** Reads "🟦 sites / ops" as a mark and a name; a first word with no letters or digits is the mark. */
+export const parseGroup = (text: string): GroupTag | null => {
+  const words = text.trim().split(/\s+/).filter(w => w !== '')
+  if (words.length === 0) return null
+  const [first, ...rest] = words
+  if (!/[\p{L}\p{N}]/u.test(first!)) return rest.length === 0 ? null : { mark: first!, name: rest.join(' ') }
+  return { mark: '📁', name: words.join(' ') }
+}
+
+const isGroupTag = (v: unknown): v is GroupTag =>
+  typeof v === 'object' && v !== null && typeof (v as GroupTag).mark === 'string' && typeof (v as GroupTag).name === 'string'
+
+async function storedGroups($: EngineInterface): Promise<Record<string, GroupTag>> {
+  const stored = await $.store.get('groups').catch(() => null)
+  if (typeof stored !== 'object' || stored === null) return {}
+  return Object.fromEntries(Object.entries(stored).filter(([, v]) => isGroupTag(v))) as Record<string, GroupTag>
+}
+
+/** Reads the session's folder with pwd and the group the user tied it to. */
+async function refreshPlace($: EngineInterface) {
+  const res = await $.process.run(['pwd'], { timeoutMs: 2000 })
+  const path = res.exitCode === 0 ? res.stdout.trim() : ''
+  if (path === '') return
+  const groups = await storedGroups($)
+  await update($, place, () => ({ path, folder: folderOf(path), group: groupFor(path, groups) }))
+}
+
+/** Ties the session's folder (and the folders under it) to a group, or unties it when tag is null. */
+async function setGroup($: EngineInterface, path: string, tag: GroupTag | null) {
+  const groups = await storedGroups($)
+  if (tag === null) delete groups[path]
+  else groups[path] = tag
+  await $.store.set('groups', groups)
+  await refreshPlace($)
+}
+
 /** Reads `git status --porcelain=v2 --branch`: the branch, files changed, and commits ahead/behind. */
 export const parseGitStatus = (out: string): GitInfo | null => {
   let branch: string | null = null
@@ -812,6 +866,7 @@ export const register: Register = on => {
         .catch(() => {}),
       startTick($).catch(() => {}),
       refreshGit($).catch(() => {}),
+      refreshPlace($).catch(() => {}),
       syncHidden($).catch(() => {}),
       syncSound($).catch(() => {}),
       syncAutoCompact($).catch(() => {}),
@@ -884,12 +939,36 @@ export const register: Register = on => {
       }
       return { text: `No theme called “${asked}”. Themes: ${THEME_NAMES.join(', ')}.` }
     }
+    if (want === 'group' || want.startsWith('group ')) {
+      // The raw text, since the name keeps the case the user typed.
+      const asked = e.args.trim().slice('group'.length).trim()
+      await refreshPlace($).catch(() => {})
+      const here = await read($, place)
+      if (here === null) return { text: "Couldn't read this session's folder." }
+      if (asked === '') {
+        return {
+          text: [
+            `Folder: ${here.path}`,
+            here.group === null ? 'Group: none' : `Group: ${here.group.mark} ${here.group.name}`,
+            'Set it with /contextbar group 🟦 name, or remove it with /contextbar group off.',
+          ].join('\n'),
+        }
+      }
+      if (asked.toLowerCase() === 'off') {
+        await setGroup($, here.path, null)
+        return { text: `${here.folder} is no longer tied to a group.` }
+      }
+      const tag = parseGroup(asked)
+      if (tag === null) return { text: 'Give the group a name after its mark, e.g. /contextbar group 🟦 sites / ops' }
+      await setGroup($, here.path, tag)
+      return { text: `${here.folder} and its subfolders now show ${tag.mark} ${tag.name}.` }
+    }
     const [hidden, sound, early] = await Promise.all([read($, isHidden), read($, soundOn), read($, autoCompactOn)])
     return {
       text: [
         ...(want !== '' ? [`Didn't understand “${want}”.`] : []),
         `Context bar: ${hidden ? 'collapsed' : 'expanded'} · sound ${sound ? 'on' : 'off'} · early compact ${early ? 'on' : 'off'}`,
-        'Usage: /contextbar show | hide | sound on | sound off | early on | early off | theme <name>',
+        'Usage: /contextbar show | hide | sound on | sound off | early on | early off | theme <name> | group <mark> <name>',
       ].join('\n'),
     }
   })
@@ -979,7 +1058,7 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [f, threshold, ls, start, t, tools, turnMs, active, hidden, repo, growth, themed] = await Promise.all([
+    const [f, threshold, ls, start, t, tools, turnMs, active, hidden, repo, growth, themed, here] = await Promise.all([
       read($, fill),
       read($, compactAt),
       read($, limits),
@@ -992,6 +1071,7 @@ export const register: Register = on => {
       read($, git),
       read($, lastGrowth),
       read($, themeName),
+      read($, place),
     ])
     const act = tools[tools.length - 1] ?? null
 
@@ -1026,6 +1106,16 @@ export const register: Register = on => {
         {pal.deco(text)}
       </Text>
     )
+    // Where this session works: the group's mark the user set, then the folder's name.
+    const whereGroup = (compact: boolean) =>
+      here === null ? (
+        label('Context')
+      ) : (
+        <Box key="where" gap={1}>
+          <Text>{here.group?.mark ?? '📁'}</Text>
+          {compact ? null : label(here.folder)}
+        </Box>
+      )
     // The app's buttons keep light-theme ink: on a dark skin they sit on its tray.
     const trayed = (button: ReturnType<typeof Button>) => <Box {...ink.tray}>{button}</Box>
     const fiveLeft = five === undefined ? null : resetIn(five.resetsAt, t)
@@ -1103,6 +1193,7 @@ export const register: Register = on => {
       return (
         <Box flexWrap="wrap" columnGap={2} alignItems="center" {...ink.band}>
           <Box gap={1} alignItems="center">
+            {here?.group != null ? whereGroup(true) : null}
             {contextGauge('mini')}
             {trayed(<Button key="open-context" plain label={`${approx}${Math.round(percent)}%`} onPress={() => openContext($)} />)}
           </Box>
@@ -1118,7 +1209,7 @@ export const register: Register = on => {
     return (
       <Box flexWrap="wrap" columnGap={2} alignItems="center" {...ink.band}>
         <Box gap={1} alignItems="center">
-          {label('Context')}
+          {whereGroup(false)}
           {contextGauge('full')}
           {trayed(<Button key="open-context" plain label={`${approx}${pctText(percent)}%`} onPress={() => openContext($)} />)}
           {f !== null ? (
@@ -1167,7 +1258,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: CONTEXT_PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [b, f, threshold, early, inUseModel, hist, nTurn, nTotal, byModel, cost, themed] = await Promise.all([
+    const [b, f, threshold, early, inUseModel, hist, nTurn, nTotal, byModel, cost, themed, here] = await Promise.all([
       read($, breakdown),
       read($, fill),
       read($, compactAt),
@@ -1179,6 +1270,7 @@ export const register: Register = on => {
       read($, stepsByModel),
       read($, costUsd),
       read($, themeName),
+      read($, place),
     ])
     const ink = inksOf(paletteOf(themed))
     const turns = turnsLeft(hist, threshold)
@@ -1208,6 +1300,12 @@ export const register: Register = on => {
           {turns !== null ? ` · ~${turns} turn${turns === 1 ? '' : 's'} to compact` : ''}
           {cost !== null && cost > 0 ? ` · ${usd(cost)} this session` : ''}
         </Text>
+        {here !== null ? (
+          <Text {...ink.faint}>
+            {here.group !== null ? `${here.group.mark} ${here.group.name} · ` : ''}
+            {here.path}
+          </Text>
+        ) : null}
       </Box>
     )
 
