@@ -6,7 +6,6 @@ import type { Breakdown, ContextFill, GitInfo, GroupTag, Limit, RunningTool, Usa
 const fill = atom({ plugin: 'context-bar', key: 'fill' } as const, null)
 const compactAt = atom({ plugin: 'context-bar', key: 'compactAt' } as const, null)
 const limits = atom({ plugin: 'context-bar', key: 'limits' } as const, [])
-const startedAt = atom({ plugin: 'context-bar', key: 'startedAt' } as const, null)
 const now = atom({ plugin: 'context-bar', key: 'now' } as const, 0)
 const running = atom({ plugin: 'context-bar', key: 'running' } as const, [])
 const agents = atom({ plugin: 'context-bar', key: 'agents' } as const, [])
@@ -330,17 +329,9 @@ export const turnLength = (ms: number) => {
 export const unitRuns = (text: string) =>
   (text.match(/\d+|\D+/g) ?? []).map(run => ({ run, unit: !/^\d/.test(run) }))
 
-/** The reset countdown: blue while usage is easy, warning colours as the limit nears. */
+/** The Usage panel's reset countdown: blue while usage is easy, warning colours as the limit nears. */
 export const countdownColor = (percent: number): Tone =>
   percent >= 80 ? 'error' : percent >= 50 ? 'warning' : 'suggestion'
-
-/** Session age as "12m", "1h15m" or, past a day, "1d11h52m". */
-export const duration = (ms: number) => {
-  const m = Math.max(0, Math.floor(ms / 60000))
-  if (m < 60) return `${m}m`
-  if (m < 1440) return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`
-  return `${Math.floor(m / 1440)}d${String(Math.floor((m % 1440) / 60)).padStart(2, '0')}h${String(m % 60).padStart(2, '0')}m`
-}
 
 /** Whole minutes as "12m", "2h05m" or, past a day, "2d 22h". */
 export const minutesText = (m: number) =>
@@ -516,7 +507,6 @@ async function refreshUsage($: EngineInterface, opts: { checkWindow: boolean } =
     update($, fill, () => filled),
     // A response without rate-limit headers reports none; keep the last reading.
     update($, limits, prev => (nextLimits.length > 0 ? nextLimits : prev)),
-    update($, startedAt, () => usage.startedAt),
     update($, now, () => at),
     // A reading without a cost keeps the last one, as the limits write does.
     update($, costUsd, prev => usage.cost?.usd ?? prev),
@@ -1064,12 +1054,10 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [f, threshold, ls, start, t, tools, turnMs, active, hidden, repo, growth, themed, here] = await Promise.all([
+    const [f, threshold, ls, tools, turnMs, active, hidden, repo, growth, themed, here] = await Promise.all([
       read($, fill),
       read($, compactAt),
       read($, limits),
-      read($, startedAt),
-      read($, now),
       read($, running),
       read($, lastTurnMs),
       read($, agents),
@@ -1085,7 +1073,6 @@ export const register: Register = on => {
     // Estimated from the breakdown after a compaction, until the next reply.
     const approx = f?.estimated === true ? '~' : ''
     const toCompact = f === null ? null : compactPercent(f.tokens, threshold)
-    const elapsed = start === null || t === 0 ? null : duration(t - start)
 
     const showWork = e.props.isWorking || active.length > 0
     const five = ls.find(l => l.kind === 'five_hour')
@@ -1124,7 +1111,6 @@ export const register: Register = on => {
       )
     // The app's buttons keep light-theme ink: on a dark skin they sit on its tray.
     const trayed = (button: ReturnType<typeof Button>) => <Box {...ink.tray}>{button}</Box>
-    const fiveLeft = five === undefined ? null : resetIn(five.resetsAt, t)
     const fable = ls.filter(l => isFable(l.kind))
 
     // One cell per glyph, coloured; the gauges are strips of these.
@@ -1151,11 +1137,6 @@ export const register: Register = on => {
             <Button key="open-usage" plain dimColor={five.percent < 50} label={`${five.percent}%`} onPress={() => openUsage($)} />,
           )}
           {five.percent >= 80 ? <Text color={ink.tone('error')}>⚠</Text> : null}
-          {fiveLeft !== null ? (
-            <Text color={ink.tone(countdownColor(five.percent))} bold>
-              ↻ {fiveLeft}
-            </Text>
-          ) : null}
         </Box>
       )
 
@@ -1246,12 +1227,7 @@ export const register: Register = on => {
           </Box>
         ))}
         {gitGroup(false)}
-        {turnMs !== null || elapsed !== null ? (
-          <Box gap={1}>
-            {turnMs !== null ? <Text {...ink.faint}>L:{withUnits(turnLength(turnMs), 'l')}</Text> : null}
-            {elapsed !== null ? <Text {...ink.faint}>Age:{withUnits(elapsed, 'a')}</Text> : null}
-          </Box>
-        ) : null}
+        {turnMs !== null ? <Text {...ink.faint}>L:{withUnits(turnLength(turnMs), 'l')}</Text> : null}
         {workGroup}
         <Box flexGrow={1} />
         {toCompact !== null && toCompact >= 70 ? (

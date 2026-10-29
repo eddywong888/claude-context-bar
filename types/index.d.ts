@@ -17,7 +17,6 @@ declare module 'claude-code' {
       fill: ContextFill | null
       compactAt: number | null
       limits: Limit[]
-      startedAt: number | null
       now: number
       running: RunningTool[]
       agents: string[]

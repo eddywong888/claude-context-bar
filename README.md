@@ -1,6 +1,6 @@
 # Claude Context Bar
 
-A status bar for Claude Code that sits above the prompt. It shows how full the context window is, how much of your 5-hour usage is gone and when it resets, the git branch, and how long the last turn and the session have run.
+A status bar for Claude Code that sits above the prompt. It shows how full the context window is, how much of your 5-hour usage is gone, the session's folder and git branch, and how long the last turn took.
 
 ![The bar in the ember skin](media/bar-ember.png)
 
@@ -35,10 +35,10 @@ To update later:
 | 📁 **folder** | The session's folder (the project's, for a worktree). If you tie the folder to a group with `/contextbar group`, its mark shows instead of 📁, so you can tell which sidebar group a session belongs to. |
 | **Context** gauge | How full the context window is, in a gradient from calm to full. The thin line marks 75%. The figure after it is the percent used, then tokens used out of the window, then how much the last turn added. Right after a compaction or `/clear` the figure is an estimate from `/context`, marked `~`, until Claude's next reply. |
 | ⚠ auto-compact | Shows once the context is 85% of the way to the point where Claude Code compacts on its own. A **Compact** button appears from 70%. |
-| **5h** dots | Your 5-hour usage: five dots, one per 20%. The ↻ countdown is the time until it resets, blue at first and amber, then red, as the limit nears. A notice shows when it resets. |
+| **5h** dots | Your 5-hour usage: five dots, one per 20%. Click the % for the reset time in the Usage panel. A notice shows when it resets. |
 | **Fable** gauge | Shown only when Claude Code reports a Fable usage window. |
 | ⎇ branch | The git branch, ✎ uncommitted files, ↑↓ commits ahead and behind. |
-| **L** and **Age** | How long the last turn took, and how long the session has been open (days past 24 hours, e.g. `1d12h44m`). |
+| **L** | How long the last turn took. |
 | ▶ working | The tool Claude is running now, and any subagents. |
 | **Hide** | Folds the bar into small gauges. **Show** brings it back. |
 

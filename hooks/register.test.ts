@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, clip, fillFrom, folderOf, groupFor, hasReset, inksOf, isFable, isTheme, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, parseGroup, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
+import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, forecast, gradientAt, gradientCells, clip, fillFrom, folderOf, groupFor, hasReset, inksOf, isFable, isTheme, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, parseGroup, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -8,12 +8,7 @@ test('auto-compact share', () => {
   expect(compactPercent(50_000, null)).toBe(null)
 })
 
-test('session length', () => {
-  expect(duration(12 * 60000)).toBe('12m')
-  expect(duration(75 * 60000)).toBe('1h15m')
-  expect(duration((23 * 60 + 59) * 60000)).toBe('23h59m')
-  expect(duration(24 * 60 * 60000)).toBe('1d00h00m')
-  expect(duration((35 * 60 + 52) * 60000)).toBe('1d11h52m')
+test('units are split from figures', () => {
   expect(unitRuns('1d11h52m').filter(r => r.unit).map(r => r.run)).toEqual(['d', 'h', 'm'])
   expect(unitRuns('1d11h52m').map(r => r.run).join('')).toBe('1d11h52m')
 })

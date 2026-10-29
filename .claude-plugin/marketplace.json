@@ -1,6 +1,6 @@
 {
   "name": "claude-context-bar",
-  "description": "A status bar above the Claude Code prompt for context fill, 5-hour usage, git and session time, with Context and Usage panels.",
+  "description": "A status bar above the Claude Code prompt for context fill, 5-hour usage, folder, git and turn time, with Context and Usage panels.",
   "owner": {
     "name": "Eddy Wong"
   },
@@ -8,7 +8,7 @@
     {
       "name": "context-bar",
       "source": "./",
-      "description": "A status bar above the prompt: context gauge, 5-hour usage, git, turn time and session age, with Context and Usage panels and ten skins",
+      "description": "A status bar above the prompt: context gauge, 5-hour usage, folder and git, turn time, with Context and Usage panels and ten skins",
       "category": "productivity",
       "keywords": [
         "status bar",
