@@ -32,10 +32,10 @@ To update later:
 
 | Part | What it means |
 |---|---|
-| 📁 **folder** | The session's folder (the project's, for a worktree). If you tie the folder to a group with `/contextbar group`, its mark shows instead of 📁, so you can tell which sidebar group a session belongs to. |
 | **Context** gauge | How full the context window is, in a gradient from calm to full. The thin line marks 75%. The figure after it is the percent used, then tokens used out of the window, then how much the last turn added. Right after a compaction or `/clear` the figure is an estimate from `/context`, marked `~`, until Claude's next reply. |
 | ⚠ auto-compact | Shows once the context is 85% of the way to the point where Claude Code compacts on its own. A **Compact** button appears from 70%. |
 | **5h** dots | Your 5-hour usage: five dots, one per 20%. Click the % for the reset time in the Usage panel. A notice shows when it resets. |
+| 📁 **folder** | The session's folder (the project's, for a worktree). If you tie the folder to a group with `/contextbar group`, its mark shows instead of 📁, so you can tell which sidebar group a session belongs to. |
 | **Fable** gauge | Shown only when Claude Code reports a Fable usage window. |
 | ⎇ branch | The git branch, ✎ uncommitted files, ↑↓ commits ahead and behind. |
 | **L** | How long the last turn took. |

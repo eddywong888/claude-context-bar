@@ -1101,9 +1101,7 @@ export const register: Register = on => {
     )
     // Where this session works: the group's mark the user set, then the folder's name.
     const whereGroup = (compact: boolean) =>
-      here === null ? (
-        label('Context')
-      ) : (
+      here === null ? null : (
         <Box key="where" gap={1}>
           <Text>{here.group?.mark ?? '📁'}</Text>
           {compact ? null : label(clip(here.folder, FOLDER_CHARS))}
@@ -1180,11 +1178,11 @@ export const register: Register = on => {
       return (
         <Box flexWrap="wrap" columnGap={2} alignItems="center" {...ink.band}>
           <Box gap={1} alignItems="center">
-            {here?.group != null ? whereGroup(true) : null}
             {contextGauge('mini')}
             {trayed(<Button key="open-context" plain label={`${approx}${Math.round(percent)}%`} onPress={() => openContext($)} />)}
           </Box>
           {fiveGroup}
+          {here?.group != null ? whereGroup(true) : null}
           {gitGroup(true)}
           {workGroup}
           <Box flexGrow={1} />
@@ -1196,7 +1194,7 @@ export const register: Register = on => {
     return (
       <Box flexWrap="wrap" columnGap={2} alignItems="center" {...ink.band}>
         <Box gap={1} alignItems="center">
-          {whereGroup(false)}
+          {label('Context')}
           {contextGauge('full')}
           {trayed(<Button key="open-context" plain label={`${approx}${pctText(percent)}%`} onPress={() => openContext($)} />)}
           {f !== null ? (
@@ -1217,6 +1215,7 @@ export const register: Register = on => {
           </Text>
         ) : null}
         {fiveGroup}
+        {whereGroup(false)}
         {fable.map(l => (
           <Box key={l.kind} gap={1} alignItems="center">
             {label('Fable')}
