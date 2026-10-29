@@ -35,7 +35,7 @@ To update later:
 | **Context** gauge | How full the context window is, in a gradient from calm to full. The thin line marks 75%. The figure after it is the percent used, then tokens used out of the window, then how much the last turn added. Right after a compaction or `/clear` the figure is an estimate from `/context`, marked `~`, until Claude's next reply. |
 | ⚠ auto-compact | Shows once the context is 85% of the way to the point where Claude Code compacts on its own. A **Compact** button appears from 70%. |
 | **5h** dots | Your 5-hour usage: five dots, one per 20%. Click the % for the reset time in the Usage panel. A notice shows when it resets. |
-| 📁 **folder** | The session's folder (the project's, for a worktree). If you tie the folder to a group with `/contextbar group`, its mark shows instead of 📁, so you can tell which sidebar group a session belongs to. |
+| 📁 **folder** | The session's folder (the project's, for a worktree); click it to open the folder in Finder. If you tie the folder to a group with `/contextbar group`, its mark shows instead of 📁, so you can tell which sidebar group a session belongs to. |
 | **Fable** gauge | Shown only when Claude Code reports a Fable usage window. |
 | ⎇ branch | The git branch, ✎ uncommitted files, ↑↓ commits ahead and behind. |
 | **L** | How long the last turn took. |
@@ -82,6 +82,7 @@ Everything stays on your machine. The mod makes no network requests.
 | Runs `/compact` | Only when you press **Compact now** (or `c` in the Context panel), or when you turn on **Early compact at 90%**, which is off by default. Early compaction runs `/compact` once the context is 90% of the way to auto-compaction and Claude is idle. |
 | Runs `/clear` | Only when you press **Clear chat** in the Usage panel. |
 | Starts `pwd` | Once when the session starts, to show the session's folder. |
+| Starts `open` | Only when you click the folder name on the bar: it opens that folder in Finder (macOS). |
 | Starts `git` | `git --no-optional-locks status --porcelain=v2 --branch` in the session's folder, for the branch, changed files and ahead/behind counts. It runs when the session starts and after a tool that writes files, at most once every 5 seconds. It never takes git's index lock or changes the repository. |
 | Reads the session | Token counts, the `/context` breakdown, cost, usage windows, the model, and the running tools and subagents. The ▶ working line shows the first line of the running tool's input, with anything that looks like a token, key or password masked. |
 | Sends data out | Only to your clipboard, when you press **Copy figures** (the context figures shown in the panel). |

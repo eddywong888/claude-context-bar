@@ -782,6 +782,12 @@ async function refreshPlace($: EngineInterface) {
   await update($, place, () => ({ path, folder: folderOf(path), group: groupFor(path, groups) }))
 }
 
+/** Opens the session's folder in Finder (macOS `open`). */
+async function openFolder($: EngineInterface, path: string) {
+  const res = await $.process.run(['open', path], { timeoutMs: 5000 })
+  if (res.exitCode !== 0) $.ui.toast(`Couldn't open ${path}`)
+}
+
 /** Ties the session's folder (and the folders under it) to a group, or unties it when tag is null. */
 async function setGroup($: EngineInterface, path: string, tag: GroupTag | null) {
   const groups = await storedGroups($)
@@ -1099,16 +1105,20 @@ export const register: Register = on => {
         {pal.deco(text)}
       </Text>
     )
-    // Where this session works: the group's mark the user set, then the folder's name.
+    // The app's buttons keep light-theme ink: on a dark skin they sit on its tray.
+    const trayed = (button: ReturnType<typeof Button>) => <Box {...ink.tray}>{button}</Box>
+    // Where this session works: the group's mark the user set, then the folder's name, which opens it in Finder.
     const whereGroup = (compact: boolean) =>
       here === null ? null : (
         <Box key="where" gap={1}>
           <Text>{here.group?.mark ?? '📁'}</Text>
-          {compact ? null : label(clip(here.folder, FOLDER_CHARS))}
+          {compact
+            ? null
+            : trayed(
+                <Button key="open-folder" plain dimColor label={clip(here.folder, FOLDER_CHARS)} onPress={() => openFolder($, here.path).catch(() => {})} />,
+              )}
         </Box>
       )
-    // The app's buttons keep light-theme ink: on a dark skin they sit on its tray.
-    const trayed = (button: ReturnType<typeof Button>) => <Box {...ink.tray}>{button}</Box>
     const fable = ls.filter(l => isFable(l.kind))
 
     // One cell per glyph, coloured; the gauges are strips of these.

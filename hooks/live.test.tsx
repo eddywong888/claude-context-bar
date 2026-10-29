@@ -757,21 +757,24 @@ test('the band shows the folder, and the group the user ties it to', async ($, o
     value: { startedAt: 0, context: { tokens: 50_000, window: 200_000, percent: 25 }, rateLimits: [] },
   }) as never)
   on('agent.list', () => ({ value: [] }) as never)
+  const opened: string[][] = []
   on('process.run', (_$, e) =>
     ({
-      value: (e as { argv: string[] }).argv?.[0] === 'pwd'
+      value: (opened.push((e as { argv: string[] }).argv), (e as { argv: string[] }).argv?.[0] === 'pwd')
         ? { exitCode: 0, stdout: '/Users/me/Codex/sites\n', stderr: '' }
         : { exitCode: 1, stdout: '', stderr: '' },
     }) as never,
   )
   const ui = await $.ui.mount({ plugin: 'context-bar', surface: 'terminal', component: 'AbovePrompt', props: PROPS })
-  const text = async () => (await ui.findAll({ type: 'Text' })).map(t => t.text).join('|')
+  const text = async () => [...(await ui.findAll({ type: 'Text' })), ...(await ui.findAll({ type: 'Button' }))].map(t => t.text || String(t.props.label ?? '')).join('|')
 
   const before = await $.command.run({ command: 'contextbar', args: 'group' } as never)
   expect(JSON.stringify(before)).toContain('/Users/me/Codex/sites')
   expect(JSON.stringify(before)).toContain('Group: none')
   expect(await text()).toContain('📁')
   expect(await text()).toContain('sites')
+  await ui.press({ key: 'open-folder' })
+  expect(opened).toContainEqual(['open', '/Users/me/Codex/sites'])
 
   await $.command.run({ command: 'contextbar', args: 'group 🟦 Sites / Ops' } as never)
   expect(await text()).toContain('🟦')
