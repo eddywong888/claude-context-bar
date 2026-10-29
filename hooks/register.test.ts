@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, fillFrom, folderOf, groupFor, hasReset, inksOf, isFable, isTheme, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, parseGroup, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
+import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, duration, forecast, gradientAt, gradientCells, clip, fillFrom, folderOf, groupFor, hasReset, inksOf, isFable, isTheme, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, parseGroup, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -287,4 +287,10 @@ test('parseGroup splits the mark from the name', () => {
   expect(parseGroup('wows')).toEqual({ mark: '📁', name: 'wows' })
   expect(parseGroup('🟦')).toBeNull()
   expect(parseGroup('  ')).toBeNull()
+})
+
+test('clip keeps short names and cuts long ones with an ellipsis', () => {
+  expect(clip('sites', 12)).toBe('sites')
+  expect(clip('claude-context-bar', 12)).toBe('claude-cont…')
+  expect([...clip('claude-context-bar', 12)].length).toBe(12)
 })

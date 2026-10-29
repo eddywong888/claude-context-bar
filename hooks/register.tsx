@@ -742,6 +742,12 @@ async function toggleHidden($: EngineInterface) {
   await $.store.set('isHidden', hidden).catch(() => {})
 }
 
+/** Folder names longer than this are cut on the bar, so it stays on one line; the panel shows the whole path. */
+const FOLDER_CHARS = 12
+
+/** Cuts text to n characters, ending in … when cut. */
+export const clip = (text: string, n: number) => ([...text].length <= n ? text : `${[...text].slice(0, n - 1).join('')}…`)
+
 /** The name the bar shows for a folder: its last part, or the project's for a worktree under .claude/worktrees. */
 export const folderOf = (path: string) => {
   const parts = path.replace(/\/+$/, '').split('/')
@@ -1113,7 +1119,7 @@ export const register: Register = on => {
       ) : (
         <Box key="where" gap={1}>
           <Text>{here.group?.mark ?? '📁'}</Text>
-          {compact ? null : label(here.folder)}
+          {compact ? null : label(clip(here.folder, FOLDER_CHARS))}
         </Box>
       )
     // The app's buttons keep light-theme ink: on a dark skin they sit on its tray.
