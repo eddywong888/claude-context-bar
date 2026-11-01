@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Breakdown, ContextFill, GitInfo, GroupTag, Limit, RunningTool, UsageSample } from '../types'
+import type { Breakdown, ContextFill, GitInfo, GroupTag, Limit, Quiz, RunningTool, SoundKind, UsageSample } from '../types'
 
 const fill = atom({ plugin: 'context-bar', key: 'fill' } as const, null)
 const compactAt = atom({ plugin: 'context-bar', key: 'compactAt' } as const, null)
@@ -28,11 +28,15 @@ const toolsTotal = atom({ plugin: 'context-bar', key: 'toolsTotal' } as const, 0
 const stepsByModel = atom({ plugin: 'context-bar', key: 'stepsByModel' } as const, {})
 const themeName = atom({ plugin: 'context-bar', key: 'themeName' } as const, 'meadow')
 const soundOn = atom({ plugin: 'context-bar', key: 'soundOn' } as const, true)
+const soundKind = atom({ plugin: 'context-bar', key: 'soundKind' } as const, 'bell')
+const quiz = atom({ plugin: 'context-bar', key: 'quiz' } as const, { pending: null, last: null, right: 0, asked: 0 })
+const quizKey = atom({ plugin: 'context-bar', key: 'quizKey' } as const, null)
 const tickOwner = atom({ plugin: 'context-bar', key: 'tickOwner' } as const, null)
 const place = atom({ plugin: 'context-bar', key: 'place' } as const, null)
 
 const CONTEXT_PANE = 'context-bar-context'
 const USAGE_PANE = 'context-bar-usage'
+const QUIZ_PANE = 'context-bar-quiz'
 const WIDTH = 12
 /** Cells in the Fable gauge. */
 const SMOOTH = 8
@@ -586,13 +590,61 @@ async function openUsage($: EngineInterface) {
   }
 }
 
-/** Rings the completion sound (castle-mod's done.wav) when it is turned on. */
-async function ringDone($: EngineInterface) {
+/** The piano notes in sounds/piano/, built by scripts/make-notes.py: the white keys from middle C up an octave. */
+export const NOTES = [
+  { id: 'C4', letter: 'C', solfa: 'do' },
+  { id: 'D4', letter: 'D', solfa: 're' },
+  { id: 'E4', letter: 'E', solfa: 'mi' },
+  { id: 'F4', letter: 'F', solfa: 'fa' },
+  { id: 'G4', letter: 'G', solfa: 'sol' },
+  { id: 'A4', letter: 'A', solfa: 'la' },
+  { id: 'B4', letter: 'B', solfa: 'ti' },
+  { id: 'C5', letter: 'C', solfa: 'do' },
+]
+export const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+export const SOUND_KINDS: SoundKind[] = ['bell', 'notes', 'quiz']
+export const isSoundKind = (v: unknown): v is SoundKind => typeof v === 'string' && (SOUND_KINDS as string[]).includes(v)
+export const soundKindName = (kind: SoundKind) => (kind === 'bell' ? 'bell' : kind === 'notes' ? 'piano notes' : 'note quiz')
+export const noteName = (i: number) => `${NOTES[i]!.id} · ${NOTES[i]!.solfa}`
+
+/** A random note, never the one just played, so the same pitch doesn't come twice in a row. */
+export const pickNote = (previous: number | null, roll: number) => {
+  const others = NOTES.map((_, i) => i).filter(i => i !== previous)
+  return others[Math.min(others.length - 1, Math.floor(roll * others.length))]!
+}
+
+export const scoreText = (q: Quiz) => (q.asked === 0 ? 'No answers yet' : `${q.right} of ${q.asked} right (${Math.round((q.right / q.asked) * 100)}%)`)
+
+/** Notes played in this session, so the next one differs from the last. */
+let lastNote: number | null = null
+
+async function playClip($: EngineInterface, asset: string) {
   try {
-    if (await read($, soundOn)) await $.audio.play({ asset: 'sounds/done.wav' })
+    await $.audio.play({ asset })
   } catch {
     // No player on this platform, or the clip could not play.
   }
+}
+
+const playNote = ($: EngineInterface, i: number) => playClip($, `sounds/piano/${NOTES[i]!.id}.wav`)
+
+/**
+ * Plays the reply sound when it is on: castle-mod's done.wav bell, a piano note
+ * the toast names, or a note left on the bar to guess.
+ */
+async function ringDone($: EngineInterface) {
+  if (!(await read($, soundOn))) return
+  const kind = await read($, soundKind)
+  if (kind === 'bell') {
+    playClip($, 'sounds/done.wav').catch(() => {})
+    return
+  }
+  const i = pickNote(lastNote, Math.random())
+  lastNote = i
+  // The quiz's note is set before the hook returns, so the bar shows ♪ ?; the clip plays on its own.
+  if (kind === 'quiz') await saveNote($, i).catch(() => {})
+  else $.ui.toast(`♪ ${noteName(i)}`)
+  playNote($, i).catch(() => {})
 }
 
 async function toggleSound($: EngineInterface) {
@@ -601,9 +653,130 @@ async function toggleSound($: EngineInterface) {
   if (enabled) ringDone($).catch(() => {})
 }
 
+async function setSoundKind($: EngineInterface, kind: SoundKind) {
+  await Promise.all([update($, soundKind, () => kind), update($, soundOn, () => true)])
+  await Promise.all([$.store.set('soundKind', kind), $.store.set('soundOn', true)]).catch(() => {})
+  if (kind !== 'quiz') await saveNote($, null).catch(() => {})
+}
+
+/** The Usage panel's button: bell, then piano notes, then the quiz, then the bell again. */
+async function nextSoundKind($: EngineInterface) {
+  const kind = await read($, soundKind)
+  const following = SOUND_KINDS[(SOUND_KINDS.indexOf(kind) + 1) % SOUND_KINDS.length]!
+  await setSoundKind($, following)
+  $.ui.toast(`Reply sound: ${soundKindName(following)}`)
+  if (following !== 'bell') ringDone($).catch(() => {})
+}
+
 async function syncSound($: EngineInterface) {
-  const stored = await $.store.get('soundOn')
+  const [stored, kind] = await Promise.all([$.store.get('soundOn'), $.store.get('soundKind')])
   await update($, soundOn, () => stored !== false)
+  await update($, soundKind, () => (isSoundKind(kind) ? kind : 'bell'))
+}
+
+const isIndex = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < NOTES.length
+const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0
+const fields = (v: unknown) => (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>
+
+/** A stored quiz, checked field by field; anything unreadable starts afresh. */
+export const quizFrom = (v: unknown): Quiz => {
+  const o = fields(v)
+  const l = fields(o.last)
+  return {
+    pending: isIndex(o.pending) ? o.pending : null,
+    last: isIndex(l.note) && typeof l.picked === 'string' && typeof l.right === 'boolean' ? { note: l.note, picked: l.picked, right: l.right } : null,
+    right: isCount(o.right) ? o.right : 0,
+    asked: isCount(o.asked) ? o.asked : 0,
+  }
+}
+
+export const sameQuiz = (a: Quiz, b: Quiz) => JSON.stringify(a) === JSON.stringify(b)
+
+/**
+ * The store key for this session's quiz note. The score is shared by every
+ * session, but each session keeps the note it played, keyed by when it started.
+ */
+async function noteKey($: EngineInterface) {
+  const known = await read($, quizKey)
+  if (known !== null) return known
+  const usage = await $.session.usage()
+  const key = `quizNote:${usage.startedAt}`
+  await update($, quizKey, () => key)
+  return key
+}
+
+/**
+ * The quiz as stored: the shared score and this session's note. It lives in the
+ * store so a typed /contextbar sees the note the reply hook set. Null when the
+ * store can't be read, so callers never save a blank score over the real one.
+ */
+async function fetchQuiz($: EngineInterface): Promise<Quiz | null> {
+  try {
+    const key = await noteKey($)
+    const [score, note] = await Promise.all([$.store.get('quizScore'), $.store.get(key)])
+    return quizFrom({ ...fields(score), ...fields(note) })
+  } catch {
+    return null
+  }
+}
+
+/** Brings this session's quiz state up to the store, redrawing only on a change. */
+async function loadQuiz($: EngineInterface) {
+  const q = await fetchQuiz($)
+  if (q !== null && !sameQuiz(q, await read($, quiz))) await update($, quiz, () => q)
+  return q
+}
+
+/** Saves this session's note; the score is left alone. The store first, so a tick in between never brings the old note back. */
+async function saveNote($: EngineInterface, pending: number | null) {
+  const { last } = await read($, quiz)
+  await $.store.set(await noteKey($), { pending, last })
+  await update($, quiz, q => ({ ...q, pending }))
+}
+
+/** Marks a guess by letter, so either C counts for C4 and C5. */
+export const judge = (q: Quiz, picked: string): Quiz => {
+  if (q.pending === null) return q
+  const right = NOTES[q.pending]!.letter === picked
+  return { pending: null, last: { note: q.pending, picked, right }, right: q.right + (right ? 1 : 0), asked: q.asked + 1 }
+}
+
+/** Judges a guess against the stored note; null when no note waits or the store can't be read. */
+async function answerQuiz($: EngineInterface, picked: string): Promise<Quiz | null> {
+  const was = await loadQuiz($)
+  if (was === null) {
+    $.ui.toast("Couldn't read the quiz; try again.")
+    return null
+  }
+  if (was.pending === null) {
+    $.ui.toast('No note waiting; one plays when Claude next finishes a reply.')
+    return null
+  }
+  const q = judge(was, picked)
+  await Promise.all([
+    $.store.set('quizScore', { right: q.right, asked: q.asked }),
+    $.store.set(await noteKey($), { pending: q.pending, last: q.last }),
+  ])
+  await update($, quiz, () => q)
+  const last = q.last!
+  $.ui.toast(last.right ? `✓ ${noteName(last.note)}` : `✗ It was ${noteName(last.note)}, not ${picked}`)
+  if (!last.right) playNote($, last.note).catch(() => {})
+  return q
+}
+
+/** C4 up to C5, one note every 450 ms, so the quiz notes can be heard in order. */
+function playScale($: EngineInterface) {
+  for (let i = 0; i < NOTES.length; i++) {
+    $.clock.after(i * 450, () => {
+      playNote($, i).catch(() => {})
+    })
+  }
+}
+
+async function openQuiz($: EngineInterface) {
+  await loadQuiz($)
+  const opened = await $.ui.open({ id: QUIZ_PANE, title: 'Which note?', focus: true })
+  if (!opened.isPlaced) $.ui.toast('No room for the quiz panel here; widen the window, or type /contextbar quiz C')
 }
 
 async function toggleAutoCompact($: EngineInterface) {
@@ -845,6 +1018,7 @@ async function tick($: EngineInterface, me: string, timer: { cancel: () => void 
   if ((await read($, tickOwner)) !== me) return timer.cancel()
   const at = await $.clock.now()
   await update($, now, () => at)
+  await loadQuiz($).catch(() => {})
   await checkReset($, at)
   const five = (await read($, limits)).find(l => l.kind === 'five_hour')
   if (five !== undefined) await recordFive($, at, five.percent)
@@ -861,7 +1035,7 @@ async function startTick($: EngineInterface) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    await $.command.register({ name: 'contextbar', description: 'Context bar: show, hide, sound and early compaction' }).catch(() => {})
+    await $.command.register({ name: 'contextbar', description: 'Context bar: show, hide, sound, note quiz and early compaction' }).catch(() => {})
     await Promise.all([
       refreshThreshold($)
         .then(() => refreshUsage($, { checkWindow: false }))
@@ -871,6 +1045,7 @@ export const register: Register = on => {
       refreshPlace($).catch(() => {}),
       syncHidden($).catch(() => {}),
       syncSound($).catch(() => {}),
+      loadQuiz($).catch(() => {}),
       syncAutoCompact($).catch(() => {}),
       syncTheme($).catch(() => {}),
     ])
@@ -923,6 +1098,24 @@ export const register: Register = on => {
       await $.store.set('soundOn', enabled).catch(() => {})
       return { text: enabled ? 'Completion sound on.' : 'Completion sound off.' }
     }
+    if (want.startsWith('sound ') && isSoundKind(want.slice('sound '.length))) {
+      const kind = want.slice('sound '.length) as SoundKind
+      await setSoundKind($, kind)
+      return { text: `Reply sound: ${soundKindName(kind)}.` }
+    }
+    if (want === 'quiz' || want.startsWith('quiz ')) {
+      const picked = want.slice('quiz'.length).trim().toUpperCase()
+      if (picked === '') {
+        const q = await loadQuiz($)
+        if (q === null) return { text: "Couldn't read the quiz." }
+        const waiting = q.pending === null ? 'No note waiting.' : 'A note is waiting: answer with /contextbar quiz C (C to B).'
+        return { text: `${waiting} Score: ${scoreText(q)}.` }
+      }
+      if (!LETTERS.includes(picked)) return { text: 'Answer with a note letter, C D E F G A or B.' }
+      const after = await answerQuiz($, picked)
+      if (after?.last == null) return { text: 'No note waiting; one plays when Claude next finishes a reply.' }
+      return { text: `${after.last.right ? 'Right' : 'Not quite'}: ${noteName(after.last.note)}. Score: ${scoreText(after)}.` }
+    }
     if (want === 'early on' || want === 'early off') {
       const enabled = want === 'early on'
       await update($, autoCompactOn, () => enabled)
@@ -965,12 +1158,12 @@ export const register: Register = on => {
       await setGroup($, here.path, tag)
       return { text: `${here.folder} and its subfolders now show ${tag.mark} ${tag.name}.` }
     }
-    const [hidden, sound, early] = await Promise.all([read($, isHidden), read($, soundOn), read($, autoCompactOn)])
+    const [hidden, sound, kind, early] = await Promise.all([read($, isHidden), read($, soundOn), read($, soundKind), read($, autoCompactOn)])
     return {
       text: [
         ...(want !== '' ? [`Didn't understand “${want}”.`] : []),
-        `Context bar: ${hidden ? 'collapsed' : 'expanded'} · sound ${sound ? 'on' : 'off'} · early compact ${early ? 'on' : 'off'}`,
-        'Usage: /contextbar show | hide | sound on | sound off | early on | early off | theme <name> | group <mark> <name>',
+        `Context bar: ${hidden ? 'collapsed' : 'expanded'} · sound ${sound ? `on (${soundKindName(kind)})` : 'off'} · early compact ${early ? 'on' : 'off'}`,
+        'Usage: /contextbar show | hide | sound on | sound off | sound bell | sound notes | sound quiz | quiz <letter> | early on | early off | theme <name> | group <mark> <name>',
       ].join('\n'),
     }
   })
@@ -1041,7 +1234,7 @@ export const register: Register = on => {
         syncSound($),
         syncTheme($),
       ])
-      if (e.reason === 'answer') ringDone($).catch(() => {})
+      if (e.reason === 'answer') await ringDone($).catch(() => {})
       const f2 = await read($, fill).catch(() => null)
       if (f2 !== null) {
         const hist = await update($, tokHist, old => [...old, f2.tokens].slice(-8)).catch(() => [] as number[])
@@ -1060,7 +1253,7 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [f, threshold, ls, tools, turnMs, active, hidden, repo, growth, themed, here] = await Promise.all([
+    const [f, threshold, ls, tools, turnMs, active, hidden, repo, growth, themed, here, q] = await Promise.all([
       read($, fill),
       read($, compactAt),
       read($, limits),
@@ -1072,6 +1265,7 @@ export const register: Register = on => {
       read($, lastGrowth),
       read($, themeName),
       read($, place),
+      read($, quiz),
     ])
     const act = tools[tools.length - 1] ?? null
 
@@ -1119,6 +1313,9 @@ export const register: Register = on => {
               )}
         </Box>
       )
+    // A note from the quiz waiting for a guess; it opens the quiz panel.
+    const quizGroup =
+      q.pending === null ? null : trayed(<Button key="open-quiz" plain label="♪ ?" onPress={() => openQuiz($).catch(() => {})} />)
     const fable = ls.filter(l => isFable(l.kind))
 
     // One cell per glyph, coloured; the gauges are strips of these.
@@ -1193,6 +1390,7 @@ export const register: Register = on => {
           </Box>
           {fiveGroup}
           {here?.group != null ? whereGroup(true) : null}
+          {quizGroup}
           {gitGroup(true)}
           {workGroup}
           <Box flexGrow={1} />
@@ -1226,6 +1424,7 @@ export const register: Register = on => {
         ) : null}
         {fiveGroup}
         {whereGroup(false)}
+        {quizGroup}
         {fable.map(l => (
           <Box key={l.kind} gap={1} alignItems="center">
             {label('Fable')}
@@ -1418,10 +1617,11 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: USAGE_PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [ls, t, sound, themed, hist5] = await Promise.all([
+    const [ls, t, sound, kind, themed, hist5] = await Promise.all([
       read($, limits),
       read($, now),
       read($, soundOn),
+      read($, soundKind),
       read($, themeName),
       read($, fiveHist),
     ])
@@ -1460,6 +1660,7 @@ export const register: Register = on => {
       <Box gap={2} marginTop={1} flexWrap="wrap" {...ink.tray}>
         <Button key="usage-refresh" hotkey="r" label="Refresh" onPress={() => refreshUsage($).catch(() => {})} />
         <Button key="usage-sound" hotkey="s" label={sound ? 'Sound: on' : 'Sound: off'} onPress={() => toggleSound($).catch(() => {})} />
+        <Button key="usage-sound-kind" hotkey="n" label={`Plays: ${soundKindName(kind)}`} onPress={() => nextSoundKind($).catch(() => {})} />
         <Button key="usage-hide-bar" label="Hide the bar" onPress={() => toggleHidden($).catch(() => {})} />
         <Button
           key="usage-clear"
@@ -1532,6 +1733,45 @@ export const register: Register = on => {
         ) : null}
         {controls}
         {skins}
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'Pane', requestId: QUIZ_PANE }, async ($, e) => {
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const [q, themed] = await Promise.all([read($, quiz), read($, themeName)])
+    const ink = inksOf(paletteOf(themed))
+    const result =
+      q.last === null ? null : (
+        <Text color={ink.tone(q.last.right ? 'suggestion' : 'error')} bold>
+          {q.last.right ? `✓ Right: ${noteName(q.last.note)}` : `✗ It was ${noteName(q.last.note)}, not ${q.last.picked}`}
+        </Text>
+      )
+    return (
+      <Box flexDirection="column" paddingX={1} gap={1} {...ink.pane}>
+        {q.pending === null ? (
+          <Text {...ink.faint}>A new note plays when Claude next finishes a reply.</Text>
+        ) : (
+          <Text {...ink.plain}>Which note was that? Press its letter.</Text>
+        )}
+        {result}
+        <Box gap={1} flexWrap="wrap" {...ink.tray}>
+          {LETTERS.map(letter => (
+            <Button
+              key={`quiz-${letter}`}
+              hotkey={letter.toLowerCase()}
+              label={`${letter} · ${NOTES.find(n => n.letter === letter)!.solfa}`}
+              onPress={() => answerQuiz($, letter).catch(() => {})}
+            />
+          ))}
+        </Box>
+        <Box gap={2} flexWrap="wrap" {...ink.tray}>
+          {q.pending !== null ? (
+            <Button key="quiz-again" hotkey="p" label="Play again" onPress={() => playNote($, q.pending!).catch(() => {})} />
+          ) : null}
+          <Button key="quiz-scale" label="Play the scale" onPress={() => playScale($)} />
+        </Box>
+        <Text {...ink.faint}>Score: {scoreText(q)}</Text>
       </Box>
     )
   })

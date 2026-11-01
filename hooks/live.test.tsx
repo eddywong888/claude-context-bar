@@ -785,3 +785,68 @@ test('the band shows the folder, and the group the user ties it to', async ($, o
   expect(await text()).not.toContain('🟦')
   await ui.unmount()
 })
+
+test('the note quiz plays a note, waits on the bar, and scores the guess', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  const played: string[] = []
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { tokens: 1, window: 200_000, percent: 0 }, rateLimits: [] },
+  }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '' } }) as never)
+  on('audio.play', (_$, e) => {
+    played.push(String((e as { clip?: { asset?: string } }).clip?.asset))
+    return { value: undefined } as never
+  })
+  on('turn.complete', () => ({ text: '' }) as never)
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('ui.toast', () => ({ value: undefined }) as never)
+
+  const set = await $.command.run({ command: 'contextbar', args: 'sound quiz' } as never)
+  expect(set.text).toBe('Reply sound: note quiz.')
+  const ui = await $.ui.mount({ plugin: 'context-bar', surface: 'desktop', component: 'AbovePrompt', props: PROPS })
+  const pane = await $.ui.mount({
+    plugin: 'context-bar',
+    surface: 'desktop',
+    component: 'Pane',
+    requestId: 'context-bar-quiz',
+    props: { title: 'Which note?', isFocused: true, bodyColumns: 80, placement: 'dock' } as never,
+  })
+  expect(await ui.find({ key: 'open-quiz' })).toBeFalsy()
+
+  await $.turn.complete({ reason: 'answer', answer: 'done', turnId: 't1' } as never)
+  const clip = played[played.length - 1]!
+  expect(clip).toMatch(/^sounds\/piano\/[A-G][45]\.wav$/)
+  expect((await ui.find({ key: 'open-quiz' }))?.props.label).toBe('♪ ?')
+
+  // The right letter scores and clears the bar's ♪ ?.
+  const letter = clip.slice('sounds/piano/'.length, 'sounds/piano/'.length + 1)
+  await pane.press({ key: `quiz-${letter}` })
+  expect(await ui.find({ key: 'open-quiz' })).toBeFalsy()
+  expect((await $.command.run({ command: 'contextbar', args: 'quiz' } as never)).text).toContain('1 of 1 right (100%)')
+
+  // A wrong letter, typed as a command, scores nothing and replays the note.
+  await $.turn.complete({ reason: 'answer', answer: 'done', turnId: 't2' } as never)
+  const second = played[played.length - 1]!.slice('sounds/piano/'.length, 'sounds/piano/'.length + 1)
+  const wrong = ['C', 'D', 'E', 'F', 'G', 'A', 'B'].find(l => l !== second)!
+  const before = played.length
+  const answer = await $.command.run({ command: 'contextbar', args: `quiz ${wrong.toLowerCase()}` } as never)
+  expect(answer.text).toContain('Not quite')
+  expect(answer.text).toContain('1 of 2 right (50%)')
+  expect(played.length).toBe(before + 1)
+
+  // With no note waiting, a letter press scores nothing.
+  await pane.press({ key: 'quiz-D' })
+  expect((await $.command.run({ command: 'contextbar', args: 'quiz' } as never)).text).toContain('1 of 2 right (50%)')
+  const none = await $.command.run({ command: 'contextbar', args: 'quiz d' } as never)
+  expect(none.text).toContain('No note waiting')
+
+  // Back to the bell: no note waits.
+  await $.command.run({ command: 'contextbar', args: 'sound bell' } as never)
+  await $.turn.complete({ reason: 'answer', answer: 'done', turnId: 't3' } as never)
+  expect(played[played.length - 1]).toBe('sounds/done.wav')
+  expect(await ui.find({ key: 'open-quiz' })).toBeFalsy()
+  await pane.unmount()
+  await ui.unmount()
+})

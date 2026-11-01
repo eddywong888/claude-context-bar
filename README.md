@@ -36,6 +36,7 @@ To update later:
 | ⚠ auto-compact | Shows once the context is 85% of the way to the point where Claude Code compacts on its own. A **Compact** button appears from 70%. |
 | **5h** dots | Your 5-hour usage: five dots, one per 20%. Click the % for the reset time in the Usage panel. A notice shows when it resets. |
 | 📁 **folder** | The session's folder (the project's, for a worktree); click it to open the folder in Finder. If you tie the folder to a group with `/contextbar group`, its mark shows instead of 📁, so you can tell which sidebar group a session belongs to. |
+| ♪ **?** | A note from the note quiz is waiting for your guess; click it to answer. Shown only when the reply sound is set to the quiz. |
 | **Fable** gauge | Shown only when Claude Code reports a Fable usage window. |
 | ⎇ branch | The git branch, ✎ uncommitted files, ↑↓ commits ahead and behind. |
 | **L** | How long the last turn took. |
@@ -48,11 +49,21 @@ To update later:
 
 ![The Context panel](media/context-panel.png)
 
-**Usage** (click the 5h %) shows each usage window with its reset time and, after a few minutes of readings, when you'd hit the limit at the recent pace. Buttons: Refresh, Sound (a short bell when Claude finishes a reply), Hide the bar and Clear chat. Below them is the skin picker.
+**Usage** (click the 5h %) shows each usage window with its reset time and, after a few minutes of readings, when you'd hit the limit at the recent pace. Buttons: Refresh, Sound (on or off), Plays (what the reply sound is, see below), Hide the bar and Clear chat. Below them is the skin picker.
 
 ![The Usage panel with the skin picker](media/usage-panel.png)
 
 The Fable weekly limit isn't reported to mods, so the panel points to Settings → Usage for it.
+
+## Reply sound and the note quiz
+
+When Claude finishes a reply, the bar can play one of three things. Press **Plays** in the Usage panel (or `n`) to switch:
+
+- **bell**: a short bell, the default.
+- **piano notes**: a random piano note from middle C up to the next C, and a toast names it, e.g. `♪ E4 · mi`. You learn the notes by hearing them through the day.
+- **note quiz**: a random note plays and the bar shows **♪ ?**. Click it to open the quiz panel and press the note's letter (C D E F G A B, or the keys `c` to `b`). A wrong guess plays the note again and says what it was. **Play again** (`p`) repeats the note and **Play the scale** plays C to C in order. Your score is kept across sessions.
+
+The notes are original, built by `scripts/make-notes.py`.
 
 ## Skins
 
@@ -68,7 +79,9 @@ Mods can't change the font, and the app draws its own buttons, so dark skins put
 |---|---|
 | `/contextbar` | Shows the current settings |
 | `/contextbar show` / `hide` | Shows or folds the bar |
-| `/contextbar sound on` / `off` | Turns the reply bell on or off |
+| `/contextbar sound on` / `off` | Turns the reply sound on or off |
+| `/contextbar sound bell` / `notes` / `quiz` | Picks what the reply sound plays |
+| `/contextbar quiz <letter>` | Answers the waiting quiz note, e.g. `/contextbar quiz e`; `quiz` alone shows the score |
 | `/contextbar early on` / `off` | Turns early compaction on or off |
 | `/contextbar theme <name>` | Picks a skin; with no name, lists them |
 | `/contextbar group 🟦 sites / ops` | Ties this session's folder, and the folders under it, to a group: the bar shows 🟦 and the Context panel shows the group's name. `group` alone shows the folder and its group; `group off` unties it. |
@@ -86,12 +99,12 @@ Everything stays on your machine. The mod makes no network requests.
 | Starts `git` | `git --no-optional-locks status --porcelain=v2 --branch` in the session's folder, for the branch, changed files and ahead/behind counts. It runs when the session starts and after a tool that writes files, at most once every 5 seconds. It never takes git's index lock or changes the repository. |
 | Reads the session | Token counts, the `/context` breakdown, cost, usage windows, the model, and the running tools and subagents. The ▶ working line shows the first line of the running tool's input, with anything that looks like a token, key or password masked. |
 | Sends data out | Only to your clipboard, when you press **Copy figures** (the context figures shown in the panel). |
-| Plays a sound | `sounds/done.wav`, a short bell when Claude finishes a reply, if Sound is on. |
-| Saves settings | Skin, sound, hidden and early-compact choices, and the folders you tied to groups, in Claude Code's own store for the mod. |
+| Plays a sound | When Claude finishes a reply, if Sound is on: `sounds/done.wav` (a short bell) or a note from `sounds/piano/`. The quiz panel also plays notes when you press Play again, Play the scale or a wrong answer. |
+| Saves settings | Skin, sound, hidden and early-compact choices, the quiz score and each session's waiting quiz note, and the folders you tied to groups, in Claude Code's own store for the mod. |
 
 Its hooks on tool calls, commands, subagent spawns and compaction pass every event on unchanged and only refresh the figures afterwards. The mod never blocks, changes, approves or denies anything, and it doesn't touch permission modes or settings.
 
-- The `command.run` hook for `/contextbar` answers the mod's own command (show, hide, sound, early, theme, group). The `command.run` hooks for `/compact` and `/clear` let the command run as typed, then re-read the context size.
+- The `command.run` hook for `/contextbar` answers the mod's own command (show, hide, sound, quiz, early, theme, group). The `command.run` hooks for `/compact` and `/clear` let the command run as typed, then re-read the context size.
 - The `agent.spawn` hook lets the subagent start unchanged, with its own prompt, tools and permission mode, then updates the list of running subagents shown on the bar.
 
 ## Develop
@@ -101,7 +114,7 @@ claude plugin validate .
 claude plugin test .
 ```
 
-Edits load with `/reload-plugins`. The bell is `sounds/done.wav`, an original sound from [claude-castle-mod](https://github.com/eddywong888/claude-castle-mod).
+Edits load with `/reload-plugins`. `python3 scripts/make-notes.py` rebuilds the piano notes. The bell is `sounds/done.wav`, an original sound from [claude-castle-mod](https://github.com/eddywong888/claude-castle-mod).
 
 ## License
 

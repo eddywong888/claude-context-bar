@@ -8,7 +8,7 @@
     {
       "name": "context-bar",
       "source": "./",
-      "description": "A status bar above the prompt: context gauge, 5-hour usage, folder and git, turn time, with Context and Usage panels and ten skins",
+      "description": "A status bar above the prompt: context gauge, 5-hour usage, folder and git, turn time, with Context and Usage panels, ten skins and a piano note quiz",
       "category": "productivity",
       "keywords": [
         "status bar",

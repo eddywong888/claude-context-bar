@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, forecast, gradientAt, gradientCells, clip, fillFrom, folderOf, groupFor, hasReset, inksOf, isFable, isTheme, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, parseGroup, pctText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
+import { NOTES, THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, forecast, gradientAt, gradientCells, clip, fillFrom, folderOf, groupFor, hasReset, inksOf, isFable, isSoundKind, isTheme, judge, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, parseGroup, pctText, pickNote, quizFrom, sameQuiz, scoreText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -288,4 +288,46 @@ test('clip keeps short names and cuts long ones with an ellipsis', () => {
   expect(clip('sites', 12)).toBe('sites')
   expect(clip('claude-context-bar', 12)).toBe('claude-cont…')
   expect([...clip('claude-context-bar', 12)].length).toBe(12)
+})
+
+test('pickNote never repeats the note just played', () => {
+  for (let roll = 0; roll < 1; roll += 0.05) {
+    expect(pickNote(3, roll)).not.toBe(3)
+    expect(pickNote(null, roll)).toBeLessThan(NOTES.length)
+  }
+  expect(pickNote(null, 0.999)).toBe(NOTES.length - 1)
+})
+
+test('judge marks a guess by letter, so either C counts', () => {
+  const start = { pending: 7, last: null, right: 2, asked: 3 }
+  expect(judge(start, 'C')).toEqual({ pending: null, last: { note: 7, picked: 'C', right: true }, right: 3, asked: 4 })
+  expect(judge({ ...start, pending: 2 }, 'F')).toEqual({ pending: null, last: { note: 2, picked: 'F', right: false }, right: 2, asked: 4 })
+  expect(judge({ ...start, pending: null }, 'C')).toEqual({ ...start, pending: null })
+})
+
+test('the score reads as right of asked, with a share', () => {
+  expect(scoreText({ pending: null, last: null, right: 0, asked: 0 })).toBe('No answers yet')
+  expect(scoreText({ pending: null, last: null, right: 3, asked: 4 })).toBe('3 of 4 right (75%)')
+})
+
+test('sound kinds are bell, notes and quiz only', () => {
+  expect(['bell', 'notes', 'quiz'].every(isSoundKind)).toBe(true)
+  expect(isSoundKind('piano')).toBe(false)
+  expect(isSoundKind(undefined)).toBe(false)
+})
+
+test('a stored quiz is read field by field', () => {
+  expect(quizFrom(undefined)).toEqual({ pending: null, last: null, right: 0, asked: 0 })
+  expect(quizFrom({ pending: 2, right: 3, asked: 5, last: { note: 1, picked: 'E', right: false } })).toEqual({
+    pending: 2, last: { note: 1, picked: 'E', right: false }, right: 3, asked: 5,
+  })
+  expect(quizFrom({ pending: 99, last: { note: 'x' } }).pending).toBeNull()
+  expect(quizFrom({ pending: 99, last: { note: 'x' } }).last).toBeNull()
+})
+
+test('stored counts must be whole and not negative; equal quizzes compare equal', () => {
+  expect(quizFrom({ right: -1, asked: 2.5 })).toEqual({ pending: null, last: null, right: 0, asked: 0 })
+  const q = { pending: 1, last: null, right: 1, asked: 2 }
+  expect(sameQuiz(q, { ...q })).toBe(true)
+  expect(sameQuiz(q, { ...q, pending: null })).toBe(false)
 })

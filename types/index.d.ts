@@ -10,6 +10,15 @@ export type RunningTool = { id: string; tool: string; detail?: string }
 export type GroupTag = { mark: string; name: string }
 /** The session's folder, the name the bar shows for it, and the group the user tied it to. */
 export type Place = { path: string; folder: string; group: GroupTag | null }
+/** What plays when Claude finishes a reply: the bell, a named piano note, or a note to guess. */
+export type SoundKind = 'bell' | 'notes' | 'quiz'
+/** The note quiz: the note waiting for a guess (an index into NOTES), the last answer, and the score. */
+export type Quiz = {
+  pending: number | null
+  last: { note: number; picked: string; right: boolean } | null
+  right: number
+  asked: number
+}
 
 declare module 'claude-code' {
   interface PluginState {
@@ -25,6 +34,9 @@ declare module 'claude-code' {
       turnStartedAt: number | null
       tickOwner: string | null
       soundOn: boolean
+      soundKind: SoundKind
+      quiz: Quiz
+      quizKey: string | null
       themeName: string
       autoCompactOn: boolean
       modelInUse: { model: string; effort?: string } | null
