@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { NOTES, THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, forecast, gradientAt, gradientCells, clip, fillFrom, folderOf, groupFor, hasReset, inksOf, isFable, isSoundKind, isTheme, judge, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, parseGroup, pctText, parseNote, pickNote, quizFrom, sameQuiz, scoreText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd, whereName } from './register'
+import { NOTES, THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, forecast, gradientAt, gradientCells, clip, fillFrom, folderOf, groupFor, hasReset, inksOf, isFable, isSoundKind, isTheme, judge, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, parseGroup, pctText, parseNote, pickNote, quizFrom, replayable, sameQuiz, scoreText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd, whereName } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -347,4 +347,12 @@ test('stored counts must be whole and not negative; equal quizzes compare equal'
   const q = { pending: 1, last: null, right: 1, asked: 2 }
   expect(sameQuiz(q, { ...q })).toBe(true)
   expect(sameQuiz(q, { ...q, pending: null })).toBe(false)
+})
+
+test('replay prefers the waiting note, then the last played, then the last answered', () => {
+  const q = { pending: 3, last: { note: 5, picked: 'C4', right: false }, right: 0, asked: 1 }
+  expect(replayable(q, 1)).toBe(3)
+  expect(replayable({ ...q, pending: null }, 1)).toBe(1)
+  expect(replayable({ ...q, pending: null }, null)).toBe(5)
+  expect(replayable(null, null)).toBeNull()
 })

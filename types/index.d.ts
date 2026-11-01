@@ -37,6 +37,7 @@ declare module 'claude-code' {
       soundKind: SoundKind
       quiz: Quiz
       quizKey: string | null
+      lastPlayed: number | null
       themeName: string
       autoCompactOn: boolean
       modelInUse: { model: string; effort?: string } | null

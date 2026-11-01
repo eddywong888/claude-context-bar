@@ -1,7 +1,7 @@
 {
   "name": "context-bar",
   "displayName": "Context Bar",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "A status bar above the prompt: context gauge, 5-hour usage, folder and git, turn time, with Context and Usage panels, ten skins and a piano note quiz",
   "keywords": [
     "status bar",

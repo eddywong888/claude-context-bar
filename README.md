@@ -61,7 +61,7 @@ When Claude finishes a reply, the bar can play one of three things. Press **Play
 
 - **bell**: a short bell, the default.
 - **piano notes**: a random piano note from middle C up to high C, and a toast names it and the session it came from, e.g. `♪ E4 · mi · 📙 wow-merid`. You learn the notes by hearing them through the day.
-- **note quiz**: a random note plays, a toast says which session it came from, and that session's bar shows **♪ ?**. Click it to open the quiz panel and press the note: C D E F G A B, or **high C** for the C an octave up (keys `c` to `b`, and `h` for high C). A wrong guess plays the note again and says what it was. **Play again** (`p`) repeats the note and **Play the scale** plays C to C in order. Your score is kept across sessions.
+- **note quiz**: a random note plays, a toast says which session it came from, and that session's bar shows **♪ ?**. Click it to open the quiz panel and press the note: C D E F G A B, or **high C** for the C an octave up (keys `c` to `b`, and `h` for high C). A wrong guess plays the note again and says what it was. **Replay** (`p`) plays the note again, before or after you answer, and **Play the scale** plays C to C in order. Your score is kept across sessions.
 
 The notes are original, built by `scripts/make-notes.py`.
 
@@ -81,6 +81,7 @@ Mods can't change the font, and the app draws its own buttons, so dark skins put
 | `/contextbar show` / `hide` | Shows or folds the bar |
 | `/contextbar sound on` / `off` | Turns the reply sound on or off |
 | `/contextbar sound bell` / `notes` / `quiz` | Picks what the reply sound plays |
+| `/contextbar replay` | Plays this session's last note again (the waiting quiz note, if any) |
 | `/contextbar quiz <note>` | Answers the waiting quiz note: `/contextbar quiz e`, or `c5` (or `high c`) for high C; `quiz` alone shows the score |
 | `/contextbar early on` / `off` | Turns early compaction on or off |
 | `/contextbar theme <name>` | Picks a skin; with no name, lists them |
@@ -99,7 +100,7 @@ Everything stays on your machine. The mod makes no network requests.
 | Starts `git` | `git --no-optional-locks status --porcelain=v2 --branch` in the session's folder, for the branch, changed files and ahead/behind counts. It runs when the session starts and after a tool that writes files, at most once every 5 seconds. It never takes git's index lock or changes the repository. |
 | Reads the session | Token counts, the `/context` breakdown, cost, usage windows, the model, and the running tools and subagents. The ▶ working line shows the first line of the running tool's input, with anything that looks like a token, key or password masked. |
 | Sends data out | Only to your clipboard, when you press **Copy figures** (the context figures shown in the panel). |
-| Plays a sound | When Claude finishes a reply, if Sound is on: `sounds/done.wav` (a short bell) or a note from `sounds/piano/`. The quiz panel also plays notes when you press Play again, Play the scale or a wrong answer. |
+| Plays a sound | When Claude finishes a reply, if Sound is on: `sounds/done.wav` (a short bell) or a note from `sounds/piano/`. The quiz panel also plays notes when you press Replay, Play the scale or a wrong answer, and `/contextbar replay` plays the session's last note. |
 | Saves settings | Skin, sound, hidden and early-compact choices, the quiz score and each session's waiting quiz note, and the folders you tied to groups, in Claude Code's own store for the mod. |
 
 Its hooks on tool calls, commands, subagent spawns and compaction pass every event on unchanged and only refresh the figures afterwards. The mod never blocks, changes, approves or denies anything, and it doesn't touch permission modes or settings.

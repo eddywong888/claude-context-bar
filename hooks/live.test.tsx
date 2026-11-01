@@ -836,6 +836,12 @@ test('the note quiz plays a note, waits on the bar, and scores the guess', async
   expect(answer.text).toContain('1 of 2 right (50%)')
   expect(played.length).toBe(before + 1)
 
+  // Replay plays the last note again, after the answer too, from the panel or the command.
+  const last = played[played.length - 1]
+  await pane.press({ key: 'quiz-replay' })
+  expect(played[played.length - 1]).toBe(last)
+  expect((await $.command.run({ command: 'contextbar', args: 'replay' } as never)).text).toBe('Replaying the note.')
+
   // With no note waiting, a letter press scores nothing.
   await pane.press({ key: 'quiz-D4' })
   expect((await $.command.run({ command: 'contextbar', args: 'quiz' } as never)).text).toContain('1 of 2 right (50%)')

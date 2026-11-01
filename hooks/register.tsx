@@ -31,6 +31,7 @@ const soundOn = atom({ plugin: 'context-bar', key: 'soundOn' } as const, true)
 const soundKind = atom({ plugin: 'context-bar', key: 'soundKind' } as const, 'bell')
 const quiz = atom({ plugin: 'context-bar', key: 'quiz' } as const, { pending: null, last: null, right: 0, asked: 0 })
 const quizKey = atom({ plugin: 'context-bar', key: 'quizKey' } as const, null)
+const lastPlayed = atom({ plugin: 'context-bar', key: 'lastPlayed' } as const, null)
 const tickOwner = atom({ plugin: 'context-bar', key: 'tickOwner' } as const, null)
 const place = atom({ plugin: 'context-bar', key: 'place' } as const, null)
 
@@ -626,8 +627,6 @@ export const scoreText = (q: Quiz) => (q.asked === 0 ? 'No answers yet' : `${q.r
 /** The session's group mark and name, or its folder, for a toast; empty when unknown. */
 export const whereName = (here: Place | null) => (here === null ? '' : `${here.group?.mark ?? '📁'} ${here.group?.name ?? here.folder}`)
 
-/** Notes played in this session, so the next one differs from the last. */
-let lastNote: number | null = null
 
 async function playClip($: EngineInterface, asset: string) {
   try {
@@ -638,6 +637,18 @@ async function playClip($: EngineInterface, asset: string) {
 }
 
 const playNote = ($: EngineInterface, i: number) => playClip($, `sounds/piano/${NOTES[i]!.id}.wav`)
+
+/** The note to replay: the one waiting for a guess, else the last one played or answered here. */
+export const replayable = (q: Quiz | null, played: number | null) => q?.pending ?? played ?? q?.last?.note ?? null
+
+/** Plays this session's note again; false when no note has played yet. */
+async function replayNote($: EngineInterface) {
+  const [q, played] = await Promise.all([loadQuiz($), read($, lastPlayed)])
+  const i = replayable(q, played)
+  if (i === null) return false
+  playNote($, i).catch(() => {})
+  return true
+}
 
 /**
  * Plays the reply sound when it is on: castle-mod's done.wav bell, a piano note
@@ -650,8 +661,8 @@ async function ringDone($: EngineInterface) {
     playClip($, 'sounds/done.wav').catch(() => {})
     return
   }
-  const i = pickNote(lastNote, Math.random())
-  lastNote = i
+  const i = pickNote(await read($, lastPlayed), Math.random())
+  await update($, lastPlayed, () => i)
   // The toast names the session, since every session's reply rings the same way.
   const from = whereName(await read($, place))
   // The quiz's note is set before the hook returns, so the bar shows ♪ ?; the clip plays on its own.
@@ -1118,6 +1129,9 @@ export const register: Register = on => {
       await setSoundKind($, kind)
       return { text: `Reply sound: ${soundKindName(kind)}.` }
     }
+    if (want === 'replay') {
+      return { text: (await replayNote($)) ? 'Replaying the note.' : 'No note played yet; one plays when Claude next finishes a reply.' }
+    }
     if (want === 'quiz' || want.startsWith('quiz ')) {
       const typed = want.slice('quiz'.length).trim()
       if (typed === '') {
@@ -1179,7 +1193,7 @@ export const register: Register = on => {
       text: [
         ...(want !== '' ? [`Didn't understand “${want}”.`] : []),
         `Context bar: ${hidden ? 'collapsed' : 'expanded'} · sound ${sound ? `on (${soundKindName(kind)})` : 'off'} · early compact ${early ? 'on' : 'off'}`,
-        'Usage: /contextbar show | hide | sound on | sound off | sound bell | sound notes | sound quiz | quiz <note> | early on | early off | theme <name> | group <mark> <name>',
+        'Usage: /contextbar show | hide | sound on | sound off | sound bell | sound notes | sound quiz | quiz <note> | replay | early on | early off | theme <name> | group <mark> <name>',
       ].join('\n'),
     }
   })
@@ -1777,9 +1791,16 @@ export const register: Register = on => {
           ))}
         </Box>
         <Box gap={2} flexWrap="wrap" {...ink.tray}>
-          {q.pending !== null ? (
-            <Button key="quiz-again" hotkey="p" label="Play again" onPress={() => playNote($, q.pending!).catch(() => {})} />
-          ) : null}
+          <Button
+            key="quiz-replay"
+            hotkey="p"
+            label="Replay"
+            onPress={() =>
+              replayNote($)
+                .then(played => (played ? undefined : $.ui.toast('No note played yet')))
+                .catch(() => {})
+            }
+          />
           <Button key="quiz-scale" label="Play the scale" onPress={() => playScale($)} />
         </Box>
         <Text {...ink.faint}>Score: {scoreText(q)}</Text>
