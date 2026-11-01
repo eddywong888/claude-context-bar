@@ -820,24 +820,24 @@ test('the note quiz plays a note, waits on the bar, and scores the guess', async
   expect(clip).toMatch(/^sounds\/piano\/[A-G][45]\.wav$/)
   expect((await ui.find({ key: 'open-quiz' }))?.props.label).toBe('♪ ?')
 
-  // The right letter scores and clears the bar's ♪ ?.
-  const letter = clip.slice('sounds/piano/'.length, 'sounds/piano/'.length + 1)
-  await pane.press({ key: `quiz-${letter}` })
+  // The right note scores and clears the bar's ♪ ?.
+  const id = clip.slice('sounds/piano/'.length, 'sounds/piano/'.length + 2)
+  await pane.press({ key: `quiz-${id}` })
   expect(await ui.find({ key: 'open-quiz' })).toBeFalsy()
   expect((await $.command.run({ command: 'contextbar', args: 'quiz' } as never)).text).toContain('1 of 1 right (100%)')
 
   // A wrong letter, typed as a command, scores nothing and replays the note.
   await $.turn.complete({ reason: 'answer', answer: 'done', turnId: 't2' } as never)
-  const second = played[played.length - 1]!.slice('sounds/piano/'.length, 'sounds/piano/'.length + 1)
-  const wrong = ['C', 'D', 'E', 'F', 'G', 'A', 'B'].find(l => l !== second)!
+  const second = played[played.length - 1]!.slice('sounds/piano/'.length, 'sounds/piano/'.length + 2)
+  const wrong = ['c4', 'd4', 'e4', 'f4', 'g4', 'a4', 'b4', 'c5'].find(n => n !== second.toLowerCase())!
   const before = played.length
-  const answer = await $.command.run({ command: 'contextbar', args: `quiz ${wrong.toLowerCase()}` } as never)
+  const answer = await $.command.run({ command: 'contextbar', args: `quiz ${wrong}` } as never)
   expect(answer.text).toContain('Not quite')
   expect(answer.text).toContain('1 of 2 right (50%)')
   expect(played.length).toBe(before + 1)
 
   // With no note waiting, a letter press scores nothing.
-  await pane.press({ key: 'quiz-D' })
+  await pane.press({ key: 'quiz-D4' })
   expect((await $.command.run({ command: 'contextbar', args: 'quiz' } as never)).text).toContain('1 of 2 right (50%)')
   const none = await $.command.run({ command: 'contextbar', args: 'quiz d' } as never)
   expect(none.text).toContain('No note waiting')

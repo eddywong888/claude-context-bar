@@ -60,8 +60,8 @@ The Fable weekly limit isn't reported to mods, so the panel points to Settings �
 When Claude finishes a reply, the bar can play one of three things. Press **Plays** in the Usage panel (or `n`) to switch:
 
 - **bell**: a short bell, the default.
-- **piano notes**: a random piano note from middle C up to the next C, and a toast names it, e.g. `♪ E4 · mi`. You learn the notes by hearing them through the day.
-- **note quiz**: a random note plays and the bar shows **♪ ?**. Click it to open the quiz panel and press the note's letter (C D E F G A B, or the keys `c` to `b`). A wrong guess plays the note again and says what it was. **Play again** (`p`) repeats the note and **Play the scale** plays C to C in order. Your score is kept across sessions.
+- **piano notes**: a random piano note from middle C up to high C, and a toast names it and the session it came from, e.g. `♪ E4 · mi · 📙 wow-merid`. You learn the notes by hearing them through the day.
+- **note quiz**: a random note plays, a toast says which session it came from, and that session's bar shows **♪ ?**. Click it to open the quiz panel and press the note: C D E F G A B, or **high C** for the C an octave up (keys `c` to `b`, and `h` for high C). A wrong guess plays the note again and says what it was. **Play again** (`p`) repeats the note and **Play the scale** plays C to C in order. Your score is kept across sessions.
 
 The notes are original, built by `scripts/make-notes.py`.
 
@@ -81,7 +81,7 @@ Mods can't change the font, and the app draws its own buttons, so dark skins put
 | `/contextbar show` / `hide` | Shows or folds the bar |
 | `/contextbar sound on` / `off` | Turns the reply sound on or off |
 | `/contextbar sound bell` / `notes` / `quiz` | Picks what the reply sound plays |
-| `/contextbar quiz <letter>` | Answers the waiting quiz note, e.g. `/contextbar quiz e`; `quiz` alone shows the score |
+| `/contextbar quiz <note>` | Answers the waiting quiz note: `/contextbar quiz e`, or `c5` (or `high c`) for high C; `quiz` alone shows the score |
 | `/contextbar early on` / `off` | Turns early compaction on or off |
 | `/contextbar theme <name>` | Picks a skin; with no name, lists them |
 | `/contextbar group 🟦 sites / ops` | Ties this session's folder, and the folders under it, to a group: the bar shows 🟦 and the Context panel shows the group's name. `group` alone shows the folder and its group; `group off` unties it. |

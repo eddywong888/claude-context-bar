@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { NOTES, THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, forecast, gradientAt, gradientCells, clip, fillFrom, folderOf, groupFor, hasReset, inksOf, isFable, isSoundKind, isTheme, judge, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, parseGroup, pctText, pickNote, quizFrom, sameQuiz, scoreText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd } from './register'
+import { NOTES, THEMES, THEME_NAMES, WARN_AT, clearPassedResets, compactPercent, countdownColor, detailOf, dotCells, forecast, gradientAt, gradientCells, clip, fillFrom, folderOf, groupFor, hasReset, inksOf, isFable, isSoundKind, isTheme, judge, kilo, limitName, maskSecrets, mini, miniCells, minutesText, minutesToLimit, modelName, parseGitStatus, parseGroup, pctText, parseNote, pickNote, quizFrom, sameQuiz, scoreText, resetIn, trackCells, turnLength, turnsLeft, unitRuns, usd, whereName } from './register'
 
 test('auto-compact share', () => {
   expect(compactPercent(85_000, 100_000)).toBe(85)
@@ -298,11 +298,28 @@ test('pickNote never repeats the note just played', () => {
   expect(pickNote(null, 0.999)).toBe(NOTES.length - 1)
 })
 
-test('judge marks a guess by letter, so either C counts', () => {
+test('judge wants the very note, so high C is not middle C', () => {
   const start = { pending: 7, last: null, right: 2, asked: 3 }
-  expect(judge(start, 'C')).toEqual({ pending: null, last: { note: 7, picked: 'C', right: true }, right: 3, asked: 4 })
-  expect(judge({ ...start, pending: 2 }, 'F')).toEqual({ pending: null, last: { note: 2, picked: 'F', right: false }, right: 2, asked: 4 })
-  expect(judge({ ...start, pending: null }, 'C')).toEqual({ ...start, pending: null })
+  expect(judge(start, 7)).toEqual({ pending: null, last: { note: 7, picked: 'C5', right: true }, right: 3, asked: 4 })
+  expect(judge(start, 0)).toEqual({ pending: null, last: { note: 7, picked: 'C4', right: false }, right: 2, asked: 4 })
+  expect(judge({ ...start, pending: null }, 0)).toEqual({ ...start, pending: null })
+})
+
+test('typed answers: a letter is the lower octave, c5 or high c is the top', () => {
+  expect(parseNote('c')).toBe(0)
+  expect(parseNote(' E ')).toBe(2)
+  expect(parseNote('b4')).toBe(6)
+  expect(parseNote('c5')).toBe(7)
+  expect(parseNote('high c')).toBe(7)
+  expect(parseNote('d5')).toBeNull()
+  expect(parseNote('h')).toBeNull()
+  expect(parseNote('x')).toBeNull()
+})
+
+test('toasts name the session by its group, else its folder', () => {
+  expect(whereName(null)).toBe('')
+  expect(whereName({ path: '/a/wows', folder: 'wows', group: { mark: '📙', name: 'wow-merid' } })).toBe('📙 wow-merid')
+  expect(whereName({ path: '/a/sites', folder: 'sites', group: null })).toBe('📁 sites')
 })
 
 test('the score reads as right of asked, with a share', () => {

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Breakdown, ContextFill, GitInfo, GroupTag, Limit, Quiz, RunningTool, SoundKind, UsageSample } from '../types'
+import type { Breakdown, ContextFill, GitInfo, GroupTag, Limit, Place, Quiz, RunningTool, SoundKind, UsageSample } from '../types'
 
 const fill = atom({ plugin: 'context-bar', key: 'fill' } as const, null)
 const compactAt = atom({ plugin: 'context-bar', key: 'compactAt' } as const, null)
@@ -592,16 +592,24 @@ async function openUsage($: EngineInterface) {
 
 /** The piano notes in sounds/piano/, built by scripts/make-notes.py: the white keys from middle C up an octave. */
 export const NOTES = [
-  { id: 'C4', letter: 'C', solfa: 'do' },
-  { id: 'D4', letter: 'D', solfa: 're' },
-  { id: 'E4', letter: 'E', solfa: 'mi' },
-  { id: 'F4', letter: 'F', solfa: 'fa' },
-  { id: 'G4', letter: 'G', solfa: 'sol' },
-  { id: 'A4', letter: 'A', solfa: 'la' },
-  { id: 'B4', letter: 'B', solfa: 'ti' },
-  { id: 'C5', letter: 'C', solfa: 'do' },
+  { id: 'C4', hotkey: 'c', label: 'C · do', solfa: 'do' },
+  { id: 'D4', hotkey: 'd', label: 'D · re', solfa: 're' },
+  { id: 'E4', hotkey: 'e', label: 'E · mi', solfa: 'mi' },
+  { id: 'F4', hotkey: 'f', label: 'F · fa', solfa: 'fa' },
+  { id: 'G4', hotkey: 'g', label: 'G · sol', solfa: 'sol' },
+  { id: 'A4', hotkey: 'a', label: 'A · la', solfa: 'la' },
+  { id: 'B4', hotkey: 'b', label: 'B · ti', solfa: 'ti' },
+  { id: 'C5', hotkey: 'h', label: 'high C · do', solfa: 'high do' },
 ]
-export const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+
+/** A typed answer: a letter (the lower octave), a letter with its octave (c5), or "high c". */
+export const parseNote = (text: string): number | null => {
+  const t = text.trim().toLowerCase().replace(/^high\s*c$/, 'c5')
+  const m = /^([a-g])([45])?$/.exec(t)
+  if (m === null) return null
+  const i = NOTES.findIndex(n => n.id === `${m[1]!.toUpperCase()}${m[2] ?? '4'}`)
+  return i < 0 ? null : i
+}
 export const SOUND_KINDS: SoundKind[] = ['bell', 'notes', 'quiz']
 export const isSoundKind = (v: unknown): v is SoundKind => typeof v === 'string' && (SOUND_KINDS as string[]).includes(v)
 export const soundKindName = (kind: SoundKind) => (kind === 'bell' ? 'bell' : kind === 'notes' ? 'piano notes' : 'note quiz')
@@ -614,6 +622,9 @@ export const pickNote = (previous: number | null, roll: number) => {
 }
 
 export const scoreText = (q: Quiz) => (q.asked === 0 ? 'No answers yet' : `${q.right} of ${q.asked} right (${Math.round((q.right / q.asked) * 100)}%)`)
+
+/** The session's group mark and name, or its folder, for a toast; empty when unknown. */
+export const whereName = (here: Place | null) => (here === null ? '' : `${here.group?.mark ?? '📁'} ${here.group?.name ?? here.folder}`)
 
 /** Notes played in this session, so the next one differs from the last. */
 let lastNote: number | null = null
@@ -641,9 +652,13 @@ async function ringDone($: EngineInterface) {
   }
   const i = pickNote(lastNote, Math.random())
   lastNote = i
+  // The toast names the session, since every session's reply rings the same way.
+  const from = whereName(await read($, place))
   // The quiz's note is set before the hook returns, so the bar shows ♪ ?; the clip plays on its own.
-  if (kind === 'quiz') await saveNote($, i).catch(() => {})
-  else $.ui.toast(`♪ ${noteName(i)}`)
+  if (kind === 'quiz') {
+    await saveNote($, i).catch(() => {})
+    $.ui.toast(from === '' ? '♪ ? A note to guess' : `♪ ? from ${from}`)
+  } else $.ui.toast(from === '' ? `♪ ${noteName(i)}` : `♪ ${noteName(i)} · ${from}`)
   playNote($, i).catch(() => {})
 }
 
@@ -734,15 +749,15 @@ async function saveNote($: EngineInterface, pending: number | null) {
   await update($, quiz, q => ({ ...q, pending }))
 }
 
-/** Marks a guess by letter, so either C counts for C4 and C5. */
-export const judge = (q: Quiz, picked: string): Quiz => {
+/** Marks a guess: right only for the very note, so high C is told apart from middle C. */
+export const judge = (q: Quiz, picked: number): Quiz => {
   if (q.pending === null) return q
-  const right = NOTES[q.pending]!.letter === picked
-  return { pending: null, last: { note: q.pending, picked, right }, right: q.right + (right ? 1 : 0), asked: q.asked + 1 }
+  const right = picked === q.pending
+  return { pending: null, last: { note: q.pending, picked: NOTES[picked]!.id, right }, right: q.right + (right ? 1 : 0), asked: q.asked + 1 }
 }
 
 /** Judges a guess against the stored note; null when no note waits or the store can't be read. */
-async function answerQuiz($: EngineInterface, picked: string): Promise<Quiz | null> {
+async function answerQuiz($: EngineInterface, picked: number): Promise<Quiz | null> {
   const was = await loadQuiz($)
   if (was === null) {
     $.ui.toast("Couldn't read the quiz; try again.")
@@ -759,7 +774,7 @@ async function answerQuiz($: EngineInterface, picked: string): Promise<Quiz | nu
   ])
   await update($, quiz, () => q)
   const last = q.last!
-  $.ui.toast(last.right ? `✓ ${noteName(last.note)}` : `✗ It was ${noteName(last.note)}, not ${picked}`)
+  $.ui.toast(last.right ? `✓ ${noteName(last.note)}` : `✗ It was ${noteName(last.note)}, not ${last.picked}`)
   if (!last.right) playNote($, last.note).catch(() => {})
   return q
 }
@@ -776,7 +791,7 @@ function playScale($: EngineInterface) {
 async function openQuiz($: EngineInterface) {
   await loadQuiz($)
   const opened = await $.ui.open({ id: QUIZ_PANE, title: 'Which note?', focus: true })
-  if (!opened.isPlaced) $.ui.toast('No room for the quiz panel here; widen the window, or type /contextbar quiz C')
+  if (!opened.isPlaced) $.ui.toast('No room for the quiz panel here; widen the window, or type /contextbar quiz e')
 }
 
 async function toggleAutoCompact($: EngineInterface) {
@@ -1104,14 +1119,15 @@ export const register: Register = on => {
       return { text: `Reply sound: ${soundKindName(kind)}.` }
     }
     if (want === 'quiz' || want.startsWith('quiz ')) {
-      const picked = want.slice('quiz'.length).trim().toUpperCase()
-      if (picked === '') {
+      const typed = want.slice('quiz'.length).trim()
+      if (typed === '') {
         const q = await loadQuiz($)
         if (q === null) return { text: "Couldn't read the quiz." }
-        const waiting = q.pending === null ? 'No note waiting.' : 'A note is waiting: answer with /contextbar quiz C (C to B).'
+        const waiting = q.pending === null ? 'No note waiting.' : 'A note is waiting: answer with /contextbar quiz e (c to b, or c5 for high C).'
         return { text: `${waiting} Score: ${scoreText(q)}.` }
       }
-      if (!LETTERS.includes(picked)) return { text: 'Answer with a note letter, C D E F G A or B.' }
+      const picked = parseNote(typed)
+      if (picked === null) return { text: 'Answer with a note: c d e f g a b, or c5 for high C.' }
       const after = await answerQuiz($, picked)
       if (after?.last == null) return { text: 'No note waiting; one plays when Claude next finishes a reply.' }
       return { text: `${after.last.right ? 'Right' : 'Not quite'}: ${noteName(after.last.note)}. Score: ${scoreText(after)}.` }
@@ -1163,7 +1179,7 @@ export const register: Register = on => {
       text: [
         ...(want !== '' ? [`Didn't understand “${want}”.`] : []),
         `Context bar: ${hidden ? 'collapsed' : 'expanded'} · sound ${sound ? `on (${soundKindName(kind)})` : 'off'} · early compact ${early ? 'on' : 'off'}`,
-        'Usage: /contextbar show | hide | sound on | sound off | sound bell | sound notes | sound quiz | quiz <letter> | early on | early off | theme <name> | group <mark> <name>',
+        'Usage: /contextbar show | hide | sound on | sound off | sound bell | sound notes | sound quiz | quiz <note> | early on | early off | theme <name> | group <mark> <name>',
       ].join('\n'),
     }
   })
@@ -1752,17 +1768,12 @@ export const register: Register = on => {
         {q.pending === null ? (
           <Text {...ink.faint}>A new note plays when Claude next finishes a reply.</Text>
         ) : (
-          <Text {...ink.plain}>Which note was that? Press its letter.</Text>
+          <Text {...ink.plain}>Which note was that? Press it, or its key (h for high C).</Text>
         )}
         {result}
         <Box gap={1} flexWrap="wrap" {...ink.tray}>
-          {LETTERS.map(letter => (
-            <Button
-              key={`quiz-${letter}`}
-              hotkey={letter.toLowerCase()}
-              label={`${letter} · ${NOTES.find(n => n.letter === letter)!.solfa}`}
-              onPress={() => answerQuiz($, letter).catch(() => {})}
-            />
+          {NOTES.map((n, i) => (
+            <Button key={`quiz-${n.id}`} hotkey={n.hotkey} label={n.label} onPress={() => answerQuiz($, i).catch(() => {})} />
           ))}
         </Box>
         <Box gap={2} flexWrap="wrap" {...ink.tray}>
