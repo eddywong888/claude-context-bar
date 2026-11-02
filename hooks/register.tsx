@@ -29,7 +29,8 @@ const stepsByModel = atom({ plugin: 'context-bar', key: 'stepsByModel' } as cons
 const themeName = atom({ plugin: 'context-bar', key: 'themeName' } as const, 'meadow')
 const soundOn = atom({ plugin: 'context-bar', key: 'soundOn' } as const, true)
 const soundKind = atom({ plugin: 'context-bar', key: 'soundKind' } as const, 'bell')
-const quiz = atom({ plugin: 'context-bar', key: 'quiz' } as const, { pending: null, last: null, right: 0, asked: 0 })
+const quiz = atom({ plugin: 'context-bar', key: 'quiz' } as const, { pending: null, last: null, right: 0, asked: 0, recent: [], streak: 0 })
+const refOn = atom({ plugin: 'context-bar', key: 'refOn' } as const, true)
 const quizKey = atom({ plugin: 'context-bar', key: 'quizKey' } as const, null)
 const lastPlayed = atom({ plugin: 'context-bar', key: 'lastPlayed' } as const, null)
 const tickOwner = atom({ plugin: 'context-bar', key: 'tickOwner' } as const, null)
@@ -622,7 +623,16 @@ export const pickNote = (previous: number | null, roll: number) => {
   return others[Math.min(others.length - 1, Math.floor(roll * others.length))]!
 }
 
-export const scoreText = (q: Quiz) => (q.asked === 0 ? 'No answers yet' : `${q.right} of ${q.asked} right (${Math.round((q.right / q.asked) * 100)}%)`)
+/** How many recent answers the score counts, so it moves as you improve. */
+export const RECENT = 20
+const share = (n: number, of: number) => Math.round((n / of) * 100)
+
+export const scoreText = (q: Quiz) => {
+  if (q.asked === 0) return 'No answers yet'
+  const hits = q.recent.filter(Boolean).length
+  const recent = q.recent.length > 0 ? `last ${q.recent.length}: ${hits} right (${share(hits, q.recent.length)}%) · streak ${q.streak} · ` : ''
+  return `${recent}all time ${q.right} of ${q.asked} (${share(q.right, q.asked)}%)`
+}
 
 /** The session's group mark and name, or its folder, for a toast; empty when unknown. */
 export const whereName = (here: Place | null) => (here === null ? '' : `${here.group?.mark ?? '📁'} ${here.group?.name ?? here.folder}`)
@@ -638,6 +648,24 @@ async function playClip($: EngineInterface, asset: string) {
 
 const playNote = ($: EngineInterface, i: number) => playClip($, `sounds/piano/${NOTES[i]!.id}.wav`)
 
+/** The gap between notes played in a row: long enough to hear each, short enough to compare. */
+const GAP_MS = 1000
+
+/** Plays notes one after another, GAP_MS apart. */
+function playNotes($: EngineInterface, notes: number[]) {
+  notes.forEach((n, k) => {
+    if (k === 0) playNote($, n).catch(() => {})
+    else $.clock.after(k * GAP_MS, () => {
+      playNote($, n).catch(() => {})
+    })
+  })
+}
+
+/** A quiz note, after middle C when the reference is on, so it can be judged by its distance from C. */
+async function playQuizNote($: EngineInterface, i: number) {
+  playNotes($, (await read($, refOn)) ? [0, i] : [i])
+}
+
 /** The note to replay: the one waiting for a guess, else the last one played or answered here. */
 export const replayable = (q: Quiz | null, played: number | null) => q?.pending ?? played ?? q?.last?.note ?? null
 
@@ -646,7 +674,7 @@ async function replayNote($: EngineInterface) {
   const [q, played] = await Promise.all([loadQuiz($), read($, lastPlayed)])
   const i = replayable(q, played)
   if (i === null) return false
-  playNote($, i).catch(() => {})
+  await playQuizNote($, i)
   return true
 }
 
@@ -669,8 +697,11 @@ async function ringDone($: EngineInterface) {
   if (kind === 'quiz') {
     await saveNote($, i).catch(() => {})
     $.ui.toast(from === '' ? '♪ ? A note to guess' : `♪ ? from ${from}`)
-  } else $.ui.toast(from === '' ? `♪ ${noteName(i)}` : `♪ ${noteName(i)} · ${from}`)
-  playNote($, i).catch(() => {})
+    await playQuizNote($, i)
+  } else {
+    $.ui.toast(from === '' ? `♪ ${noteName(i)}` : `♪ ${noteName(i)} · ${from}`)
+    playNote($, i).catch(() => {})
+  }
 }
 
 async function toggleSound($: EngineInterface) {
@@ -695,9 +726,16 @@ async function nextSoundKind($: EngineInterface) {
 }
 
 async function syncSound($: EngineInterface) {
-  const [stored, kind] = await Promise.all([$.store.get('soundOn'), $.store.get('soundKind')])
+  const [stored, kind, ref] = await Promise.all([$.store.get('soundOn'), $.store.get('soundKind'), $.store.get('quizRef')])
   await update($, soundOn, () => stored !== false)
   await update($, soundKind, () => (isSoundKind(kind) ? kind : 'bell'))
+  await update($, refOn, () => ref !== false)
+}
+
+async function toggleRef($: EngineInterface) {
+  const enabled = await update($, refOn, was => !was)
+  await $.store.set('quizRef', enabled).catch(() => {})
+  $.ui.toast(enabled ? 'Middle C plays before each quiz note' : 'Quiz notes play on their own')
 }
 
 const isIndex = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < NOTES.length
@@ -713,6 +751,8 @@ export const quizFrom = (v: unknown): Quiz => {
     last: isIndex(l.note) && typeof l.picked === 'string' && typeof l.right === 'boolean' ? { note: l.note, picked: l.picked, right: l.right } : null,
     right: isCount(o.right) ? o.right : 0,
     asked: isCount(o.asked) ? o.asked : 0,
+    recent: Array.isArray(o.recent) ? o.recent.filter((r): r is boolean => typeof r === 'boolean').slice(-RECENT) : [],
+    streak: isCount(o.streak) ? o.streak : 0,
   }
 }
 
@@ -764,8 +804,17 @@ async function saveNote($: EngineInterface, pending: number | null) {
 export const judge = (q: Quiz, picked: number): Quiz => {
   if (q.pending === null) return q
   const right = picked === q.pending
-  return { pending: null, last: { note: q.pending, picked: NOTES[picked]!.id, right }, right: q.right + (right ? 1 : 0), asked: q.asked + 1 }
+  return {
+    pending: null,
+    last: { note: q.pending, picked: NOTES[picked]!.id, right },
+    right: q.right + (right ? 1 : 0),
+    asked: q.asked + 1,
+    recent: [...q.recent, right].slice(-RECENT),
+    streak: right ? q.streak + 1 : 0,
+  }
 }
+
+const scoreOf = (q: Quiz) => ({ right: q.right, asked: q.asked, recent: q.recent, streak: q.streak })
 
 /** Judges a guess against the stored note; null when no note waits or the store can't be read. */
 async function answerQuiz($: EngineInterface, picked: number): Promise<Quiz | null> {
@@ -780,14 +829,24 @@ async function answerQuiz($: EngineInterface, picked: number): Promise<Quiz | nu
   }
   const q = judge(was, picked)
   await Promise.all([
-    $.store.set('quizScore', { right: q.right, asked: q.asked }),
+    $.store.set('quizScore', scoreOf(q)),
     $.store.set(await noteKey($), { pending: q.pending, last: q.last }),
   ])
   await update($, quiz, () => q)
   const last = q.last!
-  $.ui.toast(last.right ? `✓ ${noteName(last.note)}` : `✗ It was ${noteName(last.note)}, not ${last.picked}`)
-  if (!last.right) playNote($, last.note).catch(() => {})
+  // After a miss, your pick and then the answer, so the two can be compared.
+  $.ui.toast(last.right ? `✓ ${noteName(last.note)}${q.streak > 1 ? ` · streak ${q.streak}` : ''}` : `✗ It was ${noteName(last.note)}, not ${last.picked}: hear yours, then the answer`)
+  if (!last.right) playNotes($, [picked, last.note])
   return q
+}
+
+/** Clears the shared score; the notes waiting in sessions stay. */
+async function resetScore($: EngineInterface) {
+  const was = (await loadQuiz($)) ?? (await read($, quiz))
+  const q = { ...was, right: 0, asked: 0, recent: [], streak: 0 }
+  await $.store.set('quizScore', scoreOf(q))
+  await update($, quiz, () => q)
+  $.ui.toast('Quiz score reset')
 }
 
 /** C4 up to C5, one note every 450 ms, so the quiz notes can be heard in order. */
@@ -1769,7 +1828,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: QUIZ_PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
-    const [q, themed] = await Promise.all([read($, quiz), read($, themeName)])
+    const [q, themed, ref] = await Promise.all([read($, quiz), read($, themeName), read($, refOn)])
     const ink = inksOf(paletteOf(themed))
     const result =
       q.last === null ? null : (
@@ -1802,6 +1861,8 @@ export const register: Register = on => {
             }
           />
           <Button key="quiz-scale" label="Play the scale" onPress={() => playScale($)} />
+          <Button key="quiz-ref" label={ref ? 'Middle C first: on' : 'Middle C first: off'} onPress={() => toggleRef($).catch(() => {})} />
+          <Button key="quiz-reset" label="Reset score" onPress={() => resetScore($).catch(() => {})} />
         </Box>
         <Text {...ink.faint}>Score: {scoreText(q)}</Text>
       </Box>

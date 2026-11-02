@@ -298,11 +298,14 @@ test('pickNote never repeats the note just played', () => {
   expect(pickNote(null, 0.999)).toBe(NOTES.length - 1)
 })
 
-test('judge wants the very note, so high C is not middle C', () => {
-  const start = { pending: 7, last: null, right: 2, asked: 3 }
-  expect(judge(start, 7)).toEqual({ pending: null, last: { note: 7, picked: 'C5', right: true }, right: 3, asked: 4 })
-  expect(judge(start, 0)).toEqual({ pending: null, last: { note: 7, picked: 'C4', right: false }, right: 2, asked: 4 })
+test('judge wants the very note, so high C is not middle C; it keeps the recent answers and streak', () => {
+  const start = { pending: 7, last: null, right: 2, asked: 3, recent: [false, true], streak: 1 }
+  expect(judge(start, 7)).toEqual({ pending: null, last: { note: 7, picked: 'C5', right: true }, right: 3, asked: 4, recent: [false, true, true], streak: 2 })
+  expect(judge(start, 0)).toEqual({ pending: null, last: { note: 7, picked: 'C4', right: false }, right: 2, asked: 4, recent: [false, true, false], streak: 0 })
   expect(judge({ ...start, pending: null }, 0)).toEqual({ ...start, pending: null })
+  const full = { ...start, recent: Array.from({ length: 20 }, () => false) }
+  expect(judge(full, 7).recent).toHaveLength(20)
+  expect(judge(full, 7).recent[19]).toBe(true)
 })
 
 test('typed answers: a letter is the lower octave, c5 or high c is the top', () => {
@@ -322,9 +325,12 @@ test('toasts name the session by its group, else its folder', () => {
   expect(whereName({ path: '/a/sites', folder: 'sites', group: null })).toBe('📁 sites')
 })
 
-test('the score reads as right of asked, with a share', () => {
-  expect(scoreText({ pending: null, last: null, right: 0, asked: 0 })).toBe('No answers yet')
-  expect(scoreText({ pending: null, last: null, right: 3, asked: 4 })).toBe('3 of 4 right (75%)')
+test('the score leads with the recent answers and streak, then all time', () => {
+  const blank = { pending: null, last: null, right: 0, asked: 0, recent: [], streak: 0 }
+  expect(scoreText(blank)).toBe('No answers yet')
+  expect(scoreText({ ...blank, right: 3, asked: 4, recent: [true, true, false, true], streak: 1 })).toBe('last 4: 3 right (75%) · streak 1 · all time 3 of 4 (75%)')
+  // A score saved before recent answers were kept shows all time only.
+  expect(scoreText({ ...blank, right: 14, asked: 45 })).toBe('all time 14 of 45 (31%)')
 })
 
 test('sound kinds are bell, notes and quiz only', () => {
@@ -334,23 +340,23 @@ test('sound kinds are bell, notes and quiz only', () => {
 })
 
 test('a stored quiz is read field by field', () => {
-  expect(quizFrom(undefined)).toEqual({ pending: null, last: null, right: 0, asked: 0 })
-  expect(quizFrom({ pending: 2, right: 3, asked: 5, last: { note: 1, picked: 'E', right: false } })).toEqual({
-    pending: 2, last: { note: 1, picked: 'E', right: false }, right: 3, asked: 5,
+  expect(quizFrom(undefined)).toEqual({ pending: null, last: null, right: 0, asked: 0, recent: [], streak: 0 })
+  expect(quizFrom({ pending: 2, right: 3, asked: 5, last: { note: 1, picked: 'E', right: false }, recent: [true, 'x', false], streak: 2 })).toEqual({
+    pending: 2, last: { note: 1, picked: 'E', right: false }, right: 3, asked: 5, recent: [true, false], streak: 2,
   })
   expect(quizFrom({ pending: 99, last: { note: 'x' } }).pending).toBeNull()
   expect(quizFrom({ pending: 99, last: { note: 'x' } }).last).toBeNull()
 })
 
 test('stored counts must be whole and not negative; equal quizzes compare equal', () => {
-  expect(quizFrom({ right: -1, asked: 2.5 })).toEqual({ pending: null, last: null, right: 0, asked: 0 })
-  const q = { pending: 1, last: null, right: 1, asked: 2 }
+  expect(quizFrom({ right: -1, asked: 2.5, streak: -3 })).toEqual({ pending: null, last: null, right: 0, asked: 0, recent: [], streak: 0 })
+  const q = { pending: 1, last: null, right: 1, asked: 2, recent: [true], streak: 1 }
   expect(sameQuiz(q, { ...q })).toBe(true)
   expect(sameQuiz(q, { ...q, pending: null })).toBe(false)
 })
 
 test('replay prefers the waiting note, then the last played, then the last answered', () => {
-  const q = { pending: 3, last: { note: 5, picked: 'C4', right: false }, right: 0, asked: 1 }
+  const q = { pending: 3, last: { note: 5, picked: 'C4', right: false }, right: 0, asked: 1, recent: [false], streak: 0 }
   expect(replayable(q, 1)).toBe(3)
   expect(replayable({ ...q, pending: null }, 1)).toBe(1)
   expect(replayable({ ...q, pending: null }, null)).toBe(5)

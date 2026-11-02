@@ -787,7 +787,7 @@ test('the band shows the folder, and the group the user ties it to', async ($, o
 })
 
 test('the note quiz plays a note, waits on the bar, and scores the guess', async ($, on) => {
-  mock.clock(on)
+  const clock = mock.clock(on)
   mock.store(on)
   const played: string[] = []
   on('session.usage', () => ({
@@ -815,7 +815,10 @@ test('the note quiz plays a note, waits on the bar, and scores the guess', async
   })
   expect(await ui.find({ key: 'open-quiz' })).toBeFalsy()
 
+  // Middle C first, then the quiz note a second later.
   await $.turn.complete({ reason: 'answer', answer: 'done', turnId: 't1' } as never)
+  expect(played[played.length - 1]).toBe('sounds/piano/C4.wav')
+  await clock.advance(1000)
   const clip = played[played.length - 1]!
   expect(clip).toMatch(/^sounds\/piano\/[A-G][45]\.wav$/)
   expect((await ui.find({ key: 'open-quiz' }))?.props.label).toBe('♪ ?')
@@ -824,27 +827,43 @@ test('the note quiz plays a note, waits on the bar, and scores the guess', async
   const id = clip.slice('sounds/piano/'.length, 'sounds/piano/'.length + 2)
   await pane.press({ key: `quiz-${id}` })
   expect(await ui.find({ key: 'open-quiz' })).toBeFalsy()
-  expect((await $.command.run({ command: 'contextbar', args: 'quiz' } as never)).text).toContain('1 of 1 right (100%)')
+  expect((await $.command.run({ command: 'contextbar', args: 'quiz' } as never)).text).toContain('last 1: 1 right (100%) · streak 1 · all time 1 of 1 (100%)')
 
-  // A wrong letter, typed as a command, scores nothing and replays the note.
+  // A wrong note, typed as a command, scores nothing and plays yours, then the answer.
   await $.turn.complete({ reason: 'answer', answer: 'done', turnId: 't2' } as never)
-  const second = played[played.length - 1]!.slice('sounds/piano/'.length, 'sounds/piano/'.length + 2)
+  await clock.advance(1000)
+  const secondClip = played[played.length - 1]!
+  const second = secondClip.slice('sounds/piano/'.length, 'sounds/piano/'.length + 2)
   const wrong = ['c4', 'd4', 'e4', 'f4', 'g4', 'a4', 'b4', 'c5'].find(n => n !== second.toLowerCase())!
   const before = played.length
   const answer = await $.command.run({ command: 'contextbar', args: `quiz ${wrong}` } as never)
   expect(answer.text).toContain('Not quite')
-  expect(answer.text).toContain('1 of 2 right (50%)')
-  expect(played.length).toBe(before + 1)
+  expect(answer.text).toContain('streak 0 · all time 1 of 2 (50%)')
+  expect(played[before]).toBe(`sounds/piano/${wrong.toUpperCase()}.wav`)
+  await clock.advance(1000)
+  expect(played[played.length - 1]).toBe(secondClip)
 
-  // Replay plays the last note again, after the answer too, from the panel or the command.
-  const last = played[played.length - 1]
+  // Replay plays middle C and the last note again, after the answer too, from the panel or the command.
   await pane.press({ key: 'quiz-replay' })
-  expect(played[played.length - 1]).toBe(last)
+  await clock.advance(1000)
+  expect(played.slice(-2)).toEqual(['sounds/piano/C4.wav', secondClip])
   expect((await $.command.run({ command: 'contextbar', args: 'replay' } as never)).text).toBe('Replaying the note.')
+  await clock.advance(1000)
+
+  // With the reference off, Replay plays the note alone.
+  await pane.press({ key: 'quiz-ref' })
+  const count = played.length
+  await pane.press({ key: 'quiz-replay' })
+  await clock.advance(1000)
+  expect(played.slice(count)).toEqual([secondClip])
 
   // With no note waiting, a letter press scores nothing.
   await pane.press({ key: 'quiz-D4' })
-  expect((await $.command.run({ command: 'contextbar', args: 'quiz' } as never)).text).toContain('1 of 2 right (50%)')
+  expect((await $.command.run({ command: 'contextbar', args: 'quiz' } as never)).text).toContain('all time 1 of 2 (50%)')
+
+  // Reset clears the score.
+  await pane.press({ key: 'quiz-reset' })
+  expect((await $.command.run({ command: 'contextbar', args: 'quiz' } as never)).text).toContain('No answers yet')
   const none = await $.command.run({ command: 'contextbar', args: 'quiz d' } as never)
   expect(none.text).toContain('No note waiting')
 

@@ -61,7 +61,7 @@ When Claude finishes a reply, the bar can play one of three things. Press **Play
 
 - **bell**: a short bell, the default.
 - **piano notes**: a random piano note from middle C up to high C, and a toast names it and the session it came from, e.g. `♪ E4 · mi · 📙 wow-merid`. You learn the notes by hearing them through the day.
-- **note quiz**: a random note plays, a toast says which session it came from, and that session's bar shows **♪ ?**. Click it to open the quiz panel and press the note: C D E F G A B, or **high C** for the C an octave up (keys `c` to `b`, and `h` for high C). A wrong guess plays the note again and says what it was. **Replay** (`p`) plays the note again, before or after you answer, and **Play the scale** plays C to C in order. Your score is kept across sessions.
+- **note quiz**: middle C plays first as a reference, then a random note a second later; a toast says which session it came from, and that session's bar shows **♪ ?**. Click it to open the quiz panel and press the note: C D E F G A B, or **high C** for the C an octave up (keys `c` to `b`, and `h` for high C). After a miss you hear your pick, then the right note, so you can compare them. **Replay** (`p`) plays middle C and the note again, before or after you answer; **Play the scale** plays C to C in order; **Middle C first** turns the reference off once you no longer need it; **Reset score** starts the score afresh. The score shows your last 20 answers, your streak of right answers, and your all-time total, kept across sessions.
 
 The notes are original, built by `scripts/make-notes.py`.
 

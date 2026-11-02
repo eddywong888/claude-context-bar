@@ -18,6 +18,10 @@ export type Quiz = {
   last: { note: number; picked: string; right: boolean } | null
   right: number
   asked: number
+  /** The last answers, oldest first, true for right; the score counts these. */
+  recent: boolean[]
+  /** Right answers in a row. */
+  streak: number
 }
 
 declare module 'claude-code' {
@@ -38,6 +42,7 @@ declare module 'claude-code' {
       quiz: Quiz
       quizKey: string | null
       lastPlayed: number | null
+      refOn: boolean
       themeName: string
       autoCompactOn: boolean
       modelInUse: { model: string; effort?: string } | null
